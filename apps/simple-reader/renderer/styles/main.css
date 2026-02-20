@@ -1,0 +1,201 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 3.9%;
+  --border: 0 0% 89.8%;
+  --muted: 0 0% 96.1%;
+  --muted-foreground: 0 0% 45.1%;
+  --accent-color: #ff5c00;
+}
+
+[data-theme="dark"] {
+  --background: 0 0% 7.1%;
+  --foreground: 0 0% 98%;
+  --border: 0 0% 14.9%;
+  --muted: 0 0% 14.9%;
+  --muted-foreground: 0 0% 63.9%;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Make buttons/inputs clickable inside drag region */
+button,
+input,
+select,
+a,
+[role="button"] {
+  -webkit-app-region: no-drag;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
+
+/* Article content styling */
+.article-content {
+  line-height: 1.7;
+  font-size: 15px;
+}
+
+.article-content h1,
+.article-content h2,
+.article-content h3 {
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+}
+
+.article-content p {
+  margin-bottom: 1em;
+}
+
+.article-content a {
+  color: var(--accent-color);
+  text-decoration: underline;
+}
+
+.article-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 1em 0;
+}
+
+.article-content pre {
+  background: hsl(var(--muted));
+  padding: 1em;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-size: 13px;
+}
+
+.article-content code {
+  background: hsl(var(--muted));
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.article-content blockquote {
+  border-left: 3px solid var(--accent-color);
+  margin: 1em 0;
+  padding: 0.5em 1em;
+  color: hsl(var(--muted-foreground));
+}
+
+/* Report content styling */
+.report-content {
+  line-height: 1.7;
+  font-size: 15px;
+}
+
+.report-content h1 {
+  font-size: 1.5em;
+  font-weight: 700;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.report-content h2 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+
+.report-content h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.3em;
+}
+
+.report-content p {
+  margin-bottom: 0.8em;
+}
+
+.report-content a {
+  color: var(--accent-color);
+  text-decoration: underline;
+}
+
+.report-content li {
+  margin-bottom: 0.3em;
+  padding-left: 0.5em;
+}
+
+.report-content blockquote {
+  border-left: 3px solid var(--accent-color);
+  margin: 1em 0;
+  padding: 0.5em 1em;
+  color: hsl(var(--muted-foreground));
+}
+
+.report-content hr {
+  border: none;
+  border-top: 1px solid hsl(var(--border));
+  margin: 1.5em 0;
+}
+
+.report-content strong {
+  font-weight: 600;
+}
+
+.report-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.9em;
+}
+
+.report-content th,
+.report-content td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+
+.report-content th {
+  background: hsl(var(--muted));
+  font-weight: 600;
+}
+
+.report-content ul,
+.report-content ol {
+  padding-left: 1.5em;
+  margin: 0.5em 0;
+}
+
+.report-content code {
+  background: hsl(var(--muted));
+  padding: 0.15em 0.3em;
+  border-radius: 3px;
+  font-size: 0.9em;
+}

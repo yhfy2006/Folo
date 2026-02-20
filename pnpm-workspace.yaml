@@ -17,6 +17,7 @@ ignorePatchFailures: false
 
 onlyBuiltDependencies:
   - "@firebase/util"
+  - better-sqlite3
   - "@tsslint/core"
   - "@tsslint/eslint"
   - bufferutil
