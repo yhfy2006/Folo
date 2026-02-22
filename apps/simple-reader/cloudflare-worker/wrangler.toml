@@ -1,0 +1,8 @@
+name = "yomoo-subscribe-worker"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+account_id = "9417edb06be2435636dff9d40e412dcd"
+
+[[kv_namespaces]]
+binding = "SUBSCRIBERS"
+id = "17591c9b367f44679af32d5651602bac"

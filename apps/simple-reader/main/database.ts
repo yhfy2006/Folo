@@ -94,11 +94,27 @@ export async function initDatabase() {
       language TEXT,
       time_range INTEGER,
       entry_count INTEGER,
+      type TEXT NOT NULL DEFAULT 'report',
       created_at INTEGER NOT NULL
     );
 
     CREATE INDEX IF NOT EXISTS idx_reports_created_at ON reports(created_at);
+
+    CREATE TABLE IF NOT EXISTS report_entries (
+      report_id TEXT NOT NULL,
+      entry_id TEXT NOT NULL,
+      PRIMARY KEY (report_id, entry_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_report_entries_entry_id ON report_entries(entry_id);
   `)
+
+  // Migrate: add type column if missing
+  try {
+    db.run("ALTER TABLE reports ADD COLUMN type TEXT NOT NULL DEFAULT 'report'")
+  } catch {
+    // Column already exists
+  }
 
   saveDatabase()
   return db

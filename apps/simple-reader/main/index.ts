@@ -5,6 +5,7 @@ import path from "pathe"
 
 import { closeDatabase, initDatabase } from "./database"
 import { registerIpcHandlers } from "./ipc-handlers"
+import { startPipelineScheduler, stopPipelineScheduler } from "./pipeline-scheduler"
 import { startScheduler, stopScheduler } from "./scheduler"
 import { initWorkspace } from "./workspace"
 
@@ -65,6 +66,9 @@ app.whenReady().then(async () => {
   // Start periodic fetching
   startScheduler()
 
+  // Start pipeline scheduler
+  startPipelineScheduler()
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       createWindow()
@@ -74,6 +78,7 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   stopScheduler()
+  stopPipelineScheduler()
   closeDatabase()
   if (process.platform !== "darwin") {
     app.quit()

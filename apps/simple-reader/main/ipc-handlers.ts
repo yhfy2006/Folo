@@ -2,13 +2,15 @@ import fs from "node:fs"
 
 import { BrowserWindow, dialog, ipcMain } from "electron"
 
-import { generateReport } from "./ai-report"
+import { generatePodcastScript, generateReport } from "./ai-report"
 import type { Entry, Feed } from "./database"
 import { execute, queryAll, queryOne, saveDatabase } from "./database"
 import { parseOPML } from "./opml-parser"
+import { getSchedulerStatus, startPipelineScheduler } from "./pipeline-scheduler"
 import type { UserPreferences } from "./preferences"
 import { loadPreferences, savePreferences as savePrefs } from "./preferences"
 import { refreshAllFeeds } from "./scheduler"
+import { generateAudio } from "./tts"
 
 export function registerIpcHandlers() {
   ipcMain.handle("import-opml", async () => {
@@ -133,7 +135,13 @@ export function registerIpcHandlers() {
 
   ipcMain.handle("save-preferences", (_event, prefs: UserPreferences) => {
     savePrefs(prefs)
+    // Restart pipeline scheduler in case schedule changed
+    startPipelineScheduler()
     return { success: true }
+  })
+
+  ipcMain.handle("get-scheduler-status", () => {
+    return getSchedulerStatus()
   })
 
   ipcMain.handle("get-reports", () => {
@@ -143,9 +151,10 @@ export function registerIpcHandlers() {
       language: string
       time_range: number
       entry_count: number
+      type: string
       created_at: number
     }>(
-      "SELECT id, title, language, time_range, entry_count, created_at FROM reports ORDER BY created_at DESC LIMIT 50",
+      "SELECT id, title, language, time_range, entry_count, type, created_at FROM reports ORDER BY created_at DESC LIMIT 50",
     )
   })
 
@@ -157,6 +166,7 @@ export function registerIpcHandlers() {
       language: string
       time_range: number
       entry_count: number
+      type: string
       created_at: number
     }>("SELECT * FROM reports WHERE id = ?", [reportId])
   })
@@ -164,6 +174,166 @@ export function registerIpcHandlers() {
   ipcMain.handle("delete-report", (_event, reportId: string) => {
     execute("DELETE FROM reports WHERE id = ?", [reportId])
     return { success: true }
+  })
+
+  ipcMain.handle("generate-podcast-script", async (event, reportContent: string) => {
+    console.info("[ipc] generate-podcast-script called")
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) {
+      console.error("[ipc] No window found")
+      return { success: false, error: "No window found" }
+    }
+
+    try {
+      await generatePodcastScript(
+        reportContent,
+        (chunk) => win.webContents.send("podcast-chunk", chunk),
+        (status) => win.webContents.send("podcast-status", status),
+        () => win.webContents.send("podcast-done"),
+        (error) => win.webContents.send("podcast-error", error),
+      )
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle("generate-audio", async (event, text: string) => {
+    console.info("[ipc] generate-audio called, text length:", text.length)
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return { success: false, error: "No window found" }
+
+    try {
+      await generateAudio(text, {
+        onStatus: (status) => win.webContents.send("audio-status", status),
+        onDone: (filePath) => win.webContents.send("audio-done", filePath),
+        onError: (error) => win.webContents.send("audio-error", error),
+      })
+      return { success: true }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle("export-audio", async (_event, sourcePath: string) => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: `podcast-${new Date().toISOString().slice(0, 10)}.mp3`,
+      filters: [{ name: "MP3 Audio", extensions: ["mp3"] }],
+    })
+    if (result.canceled || !result.filePath) return { success: false }
+    fs.copyFileSync(sourcePath, result.filePath)
+    return { success: true }
+  })
+
+  ipcMain.handle("get-audio-data", (_event, filePath: string) => {
+    try {
+      const data = fs.readFileSync(filePath)
+      return `data:audio/mp3;base64,${data.toString("base64")}`
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle("export-podcast-script", async (_event, content: string) => {
+    const result = await dialog.showSaveDialog({
+      defaultPath: `podcast-script-${new Date().toISOString().slice(0, 10)}.txt`,
+      filters: [{ name: "Text", extensions: ["txt"] }],
+    })
+    if (result.canceled || !result.filePath) return { success: false }
+    fs.writeFileSync(result.filePath, content, "utf-8")
+    return { success: true }
+  })
+
+  // --- YOMOO Pipeline ---
+  ipcMain.handle("run-yomoo-pipeline", async (event) => {
+    console.info("[ipc] run-yomoo-pipeline called")
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return { success: false, error: "No window found" }
+
+    try {
+      // Dynamic import to avoid breaking other handlers if pipeline module has issues
+      const { runPipeline } = await import("./pipeline")
+      console.info("[ipc] pipeline module loaded successfully")
+
+      await runPipeline({
+        onStage: (stage) => {
+          console.info("[pipeline] stage:", stage)
+          win.webContents.send("pipeline-stage", stage)
+        },
+        onStatus: (status) => {
+          console.info("[pipeline] status:", status)
+          win.webContents.send("pipeline-status", status)
+        },
+        onProgress: (step, total) => {
+          console.info("[pipeline] progress:", step, "/", total)
+          win.webContents.send("pipeline-progress", step, total)
+        },
+        onDone: (result) => {
+          console.info("[pipeline] done:", result)
+          win.webContents.send("pipeline-done", result)
+        },
+        onError: (stage, error) => {
+          console.error("[pipeline] error at", stage, ":", error)
+          win.webContents.send("pipeline-error", stage, error)
+        },
+      })
+      return { success: true }
+    } catch (err) {
+      console.error("[ipc] run-yomoo-pipeline error:", err)
+      // Send error via event so UI gets notified even if invoke fails
+      win.webContents.send("pipeline-error", "init", String(err))
+      return { success: false, error: String(err) }
+    }
+  })
+
+  // --- Subscriber Management ---
+  ipcMain.handle("list-subscribers", async () => {
+    const prefs = loadPreferences()
+    if (!prefs.workerUrl || !prefs.workerSecret) {
+      return { success: false, error: "Worker URL and secret not configured" }
+    }
+    try {
+      const resp = await fetch(`${prefs.workerUrl.replace(/\/$/, "")}/subscribers`, {
+        headers: { "X-API-Secret": prefs.workerSecret },
+      })
+      if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` }
+      const data = await resp.json()
+      return { success: true, subscribers: data }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle("add-subscriber", async (_event, email: string) => {
+    const prefs = loadPreferences()
+    if (!prefs.workerUrl) return { success: false, error: "Worker URL not configured" }
+    try {
+      const resp = await fetch(`${prefs.workerUrl.replace(/\/$/, "")}/subscribe`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      })
+      const data = await resp.json()
+      return data
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle("remove-subscriber", async (_event, email: string) => {
+    const prefs = loadPreferences()
+    if (!prefs.workerUrl || !prefs.workerSecret) {
+      return { success: false, error: "Worker URL and secret not configured" }
+    }
+    try {
+      const crypto = await import("node:crypto")
+      const token = crypto.createHmac("sha256", prefs.workerSecret).update(email).digest("hex")
+      const url = `${prefs.workerUrl.replace(/\/$/, "")}/unsubscribe?email=${encodeURIComponent(email)}&token=${token}`
+      const resp = await fetch(url)
+      return { success: resp.ok }
+    } catch (err) {
+      return { success: false, error: String(err) }
+    }
   })
 
   ipcMain.handle("export-report", async (_event, content: string) => {

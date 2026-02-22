@@ -5,26 +5,224 @@ import { useCallback, useEffect, useRef } from "react"
 import { useReportStore } from "../stores/report-store"
 
 export function ReportView() {
-  const { generating, status, content, error, startReport, reset } = useReportStore()
+  const {
+    generating,
+    status,
+    content,
+    error,
+    startReport,
+    reset,
+    podcastContent,
+    podcastGenerating,
+    podcastStatus,
+    podcastError,
+    showPodcast,
+    startPodcastScript,
+    resetPodcast,
+    setShowPodcast,
+    audioGenerating,
+    audioStatus,
+    audioError,
+    audioFilePath,
+    startAudioGeneration,
+    resetAudio: _resetAudio,
+    pipelineRunning,
+    pipelineStage,
+    pipelineStatus,
+    pipelineStep,
+    pipelineTotal,
+    pipelineError,
+    pipelineErrorStage,
+    pipelineResult,
+    pipelineLogs,
+    startPipeline,
+    resetPipeline,
+  } = useReportStore()
   const contentRef = useRef<HTMLDivElement>(null)
   const [showPreferences, setShowPreferences] = React.useState(false)
 
   // Auto-scroll to bottom while generating
   useEffect(() => {
-    if (generating && contentRef.current) {
+    if ((generating || podcastGenerating) && contentRef.current) {
       contentRef.current.scrollTop = contentRef.current.scrollHeight
     }
-  }, [content, generating])
+  }, [content, generating, podcastContent, podcastGenerating])
+
+  // Listen for scheduled auto-trigger from main process
+  useEffect(() => {
+    const cleanup = window.api.onPipelineAutoTrigger(() => {
+      if (!pipelineRunning) {
+        console.info("[auto-trigger] Scheduled pipeline triggered")
+        startPipeline()
+      }
+    })
+    return cleanup
+  }, [pipelineRunning, startPipeline])
 
   const handleExport = useCallback(async () => {
     if (!content) return
     await window.api.exportReport(content)
   }, [content])
 
+  const handleExportPodcast = useCallback(async () => {
+    if (!podcastContent) return
+    await window.api.exportPodcastScript(podcastContent)
+  }, [podcastContent])
+
+  const handleExportAudio = useCallback(async () => {
+    if (!audioFilePath) return
+    await window.api.exportAudio(audioFilePath)
+  }, [audioFilePath])
+
   const handleRegenerate = useCallback(() => {
     reset()
     startReport()
   }, [reset, startReport])
+
+  const handleConvertToPodcast = useCallback(() => {
+    if (!content) return
+    startPodcastScript(content)
+  }, [content, startPodcastScript])
+
+  const handleBackFromPodcast = useCallback(() => {
+    resetPodcast()
+  }, [resetPodcast])
+
+  const handleGenerateAudio = useCallback(
+    (text?: string) => {
+      const source = text || podcastContent || content
+      if (!source) return
+      startAudioGeneration(source)
+    },
+    [podcastContent, content, startAudioGeneration],
+  )
+
+  // Podcast script view
+  if (showPodcast) {
+    return (
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <div className="flex items-center justify-between border-b border-[hsl(var(--border))] p-4">
+          <div className="flex items-center gap-2">
+            {!podcastGenerating && (
+              <button
+                onClick={handleBackFromPodcast}
+                className="rounded border border-[hsl(var(--border))] px-2 py-1 text-xs hover:bg-[hsl(var(--muted))]"
+                title="Back to report"
+              >
+                ←
+              </button>
+            )}
+            <div>
+              <h2 className="text-lg font-semibold">Podcast Script</h2>
+              {(podcastStatus || audioStatus) && (
+                <p className="mt-0.5 text-xs text-[hsl(var(--muted-foreground))]">
+                  {audioStatus || podcastStatus}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {podcastContent && !podcastGenerating && (
+              <>
+                {!audioGenerating && !audioFilePath && (
+                  <button
+                    onClick={handleGenerateAudio}
+                    className="rounded border border-purple-500 px-2 py-1 text-xs text-purple-600 hover:bg-purple-500/10 dark:text-purple-400"
+                    title="Generate audio from script"
+                  >
+                    Generate Audio
+                  </button>
+                )}
+                {audioFilePath && (
+                  <button
+                    onClick={handleExportAudio}
+                    className="rounded border border-purple-500 px-2 py-1 text-xs text-purple-600 hover:bg-purple-500/10 dark:text-purple-400"
+                  >
+                    Export .mp3
+                  </button>
+                )}
+                <button
+                  onClick={handleExportPodcast}
+                  className="rounded border border-[hsl(var(--border))] px-2 py-1 text-xs hover:bg-[hsl(var(--muted))]"
+                >
+                  Export .txt
+                </button>
+                <button
+                  onClick={() => {
+                    resetPodcast()
+                    setShowPodcast(true)
+                    startPodcastScript(content)
+                  }}
+                  className="rounded bg-[color:var(--accent-color)] px-3 py-1 text-xs text-white hover:opacity-90"
+                >
+                  Regenerate
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div ref={contentRef} className="flex-1 overflow-y-auto p-6">
+          {podcastError && (
+            <div className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+              {podcastError}
+            </div>
+          )}
+
+          {audioError && (
+            <div className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+              {audioError}
+            </div>
+          )}
+
+          {/* Audio player */}
+          {audioFilePath && (
+            <div className="mx-auto mb-6 max-w-2xl">
+              <AudioPlayer filePath={audioFilePath} onExport={handleExportAudio} />
+            </div>
+          )}
+
+          {/* Audio generating spinner */}
+          {audioGenerating && !audioFilePath && (
+            <div className="mx-auto mb-6 max-w-2xl rounded-lg border border-[hsl(var(--border))] p-4">
+              <div className="flex items-center gap-3">
+                <div className="size-5 animate-spin rounded-full border-2 border-[hsl(var(--border))] border-t-purple-500" />
+                <div>
+                  <p className="text-xs font-medium">{audioStatus || "Generating audio..."}</p>
+                  <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                    This may take a while for long scripts
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {podcastGenerating && !podcastContent && (
+            <div className="flex h-full flex-col items-center justify-center text-center">
+              <div className="relative mb-6">
+                <div className="size-12 animate-spin rounded-full border-4 border-[hsl(var(--border))] border-t-[color:var(--accent-color)]" />
+              </div>
+              <h3 className="text-sm font-medium">
+                {podcastStatus || "Converting to podcast script..."}
+              </h3>
+              <p className="mt-2 max-w-sm text-xs text-[hsl(var(--muted-foreground))]">
+                Claude is converting your report into a broadcast-ready script...
+              </p>
+            </div>
+          )}
+
+          {podcastContent && (
+            <div className="mx-auto max-w-2xl whitespace-pre-wrap text-[15px] leading-[1.8]">
+              {podcastContent}
+              {podcastGenerating && (
+                <span className="inline-block h-4 w-1 animate-pulse bg-[color:var(--accent-color)]" />
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
@@ -57,6 +255,30 @@ export function ReportView() {
           </button>
           {content && !generating && (
             <>
+              {!audioGenerating && !audioFilePath && (
+                <button
+                  onClick={() => handleGenerateAudio(content)}
+                  className="rounded border border-purple-500 px-2 py-1 text-xs text-purple-600 hover:bg-purple-500/10 dark:text-purple-400"
+                  title="Generate audio from report"
+                >
+                  Generate Audio
+                </button>
+              )}
+              {audioFilePath && (
+                <button
+                  onClick={handleExportAudio}
+                  className="rounded border border-purple-500 px-2 py-1 text-xs text-purple-600 hover:bg-purple-500/10 dark:text-purple-400"
+                >
+                  Export .mp3
+                </button>
+              )}
+              <button
+                onClick={handleConvertToPodcast}
+                className="hover:bg-[color:var(--accent-color)]/10 rounded border border-[color:var(--accent-color)] px-2 py-1 text-xs text-[color:var(--accent-color)]"
+                title="Convert to podcast script"
+              >
+                Podcast
+              </button>
               <button
                 onClick={handleExport}
                 className="rounded border border-[hsl(var(--border))] px-2 py-1 text-xs hover:bg-[hsl(var(--muted))]"
@@ -90,7 +312,58 @@ export function ReportView() {
           </div>
         )}
 
-        {!content && !generating && !error && <ReportHistory onGenerate={startReport} />}
+        {audioError && (
+          <div className="mb-4 rounded border border-red-300 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+            {audioError}
+          </div>
+        )}
+
+        {/* Audio player in report view */}
+        {audioFilePath && content && (
+          <div className="mx-auto mb-6 max-w-2xl">
+            <AudioPlayer filePath={audioFilePath} onExport={handleExportAudio} />
+          </div>
+        )}
+
+        {/* Audio generating spinner in report view */}
+        {audioGenerating && !audioFilePath && content && (
+          <div className="mx-auto mb-6 max-w-2xl rounded-lg border border-[hsl(var(--border))] p-4">
+            <div className="flex items-center gap-3">
+              <div className="size-5 animate-spin rounded-full border-2 border-[hsl(var(--border))] border-t-purple-500" />
+              <div>
+                <p className="text-xs font-medium">{audioStatus || "Generating audio..."}</p>
+                <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                  This may take a while for long text
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Pipeline UI */}
+        {(pipelineRunning || pipelineResult || pipelineError) && (
+          <PipelineView
+            running={pipelineRunning}
+            stage={pipelineStage}
+            status={pipelineStatus}
+            logs={pipelineLogs}
+            step={pipelineStep}
+            total={pipelineTotal}
+            error={pipelineError}
+            errorStage={pipelineErrorStage}
+            result={pipelineResult}
+            onReset={resetPipeline}
+          />
+        )}
+
+        {!content &&
+          !generating &&
+          !error &&
+          !pipelineRunning &&
+          !pipelineResult &&
+          !pipelineError && (
+            <ReportHistory onGenerate={startReport} onStartPipeline={startPipeline} />
+          )}
 
         {generating && !content && (
           <div className="flex h-full flex-col items-center justify-center text-center">
@@ -129,13 +402,20 @@ interface SavedReport {
   language: string
   time_range: number
   entry_count: number
+  type: string
   created_at: number
 }
 
-function ReportHistory({ onGenerate }: { onGenerate: () => void }) {
+function ReportHistory({
+  onGenerate,
+  onStartPipeline,
+}: {
+  onGenerate: () => void
+  onStartPipeline: () => void
+}) {
   const [reports, setReports] = React.useState<SavedReport[]>([])
   const [loaded, setLoaded] = React.useState(false)
-  const { setContent } = useReportStore()
+  const { setContent, setPodcastContent, setShowPodcast } = useReportStore()
 
   React.useEffect(() => {
     window.api.getReports().then((r: SavedReport[]) => {
@@ -144,10 +424,15 @@ function ReportHistory({ onGenerate }: { onGenerate: () => void }) {
     })
   }, [])
 
-  const handleView = async (reportId: string) => {
+  const handleView = async (reportId: string, type: string) => {
     const report = await window.api.getReport(reportId)
     if (report) {
-      setContent(report.content)
+      if (type === "podcast") {
+        setPodcastContent(report.content)
+        setShowPodcast(true)
+      } else {
+        setContent(report.content)
+      }
     }
   }
 
@@ -173,12 +458,21 @@ function ReportHistory({ onGenerate }: { onGenerate: () => void }) {
         <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">
           Generate a new report or view past reports.
         </p>
-        <button
-          onClick={onGenerate}
-          className="mt-3 rounded bg-[color:var(--accent-color)] px-4 py-2 text-sm text-white hover:opacity-90"
-        >
-          Generate New Report
-        </button>
+        <div className="mt-3 flex items-center justify-center gap-3">
+          <button
+            onClick={onGenerate}
+            className="rounded bg-[color:var(--accent-color)] px-4 py-2 text-sm text-white hover:opacity-90"
+          >
+            Generate New Report
+          </button>
+          <button
+            onClick={onStartPipeline}
+            className="rounded px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+            style={{ background: "linear-gradient(135deg, #FF6B35, #ff8f5e)" }}
+          >
+            YOMOO Pipeline
+          </button>
+        </div>
       </div>
 
       {loaded && reports.length > 0 && (
@@ -190,14 +484,22 @@ function ReportHistory({ onGenerate }: { onGenerate: () => void }) {
             {reports.map((report) => (
               <button
                 key={report.id}
-                onClick={() => handleView(report.id)}
+                onClick={() => handleView(report.id, report.type)}
                 className="group flex w-full items-center justify-between rounded border border-[hsl(var(--border))] px-3 py-2.5 text-left transition-colors hover:bg-[hsl(var(--muted))]"
               >
                 <div>
-                  <div className="text-xs font-medium">{report.title}</div>
+                  <div className="flex items-center gap-1.5 text-xs font-medium">
+                    {report.type === "podcast" && (
+                      <span className="rounded bg-purple-500/15 px-1.5 py-0.5 text-[10px] text-purple-600 dark:text-purple-400">
+                        Podcast
+                      </span>
+                    )}
+                    {report.title}
+                  </div>
                   <div className="mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
-                    {formatDate(report.created_at)} · {report.entry_count} articles ·{" "}
-                    {report.time_range}h range
+                    {formatDate(report.created_at)}
+                    {report.type !== "podcast" &&
+                      ` · ${report.entry_count} articles · ${report.time_range}h range`}
                   </div>
                 </div>
                 <span
@@ -208,6 +510,206 @@ function ReportHistory({ onGenerate }: { onGenerate: () => void }) {
                 </span>
               </button>
             ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function PipelineView({
+  running,
+  stage,
+  status,
+  logs,
+  step: _step,
+  total: _total,
+  error,
+  errorStage,
+  result,
+  onReset,
+}: {
+  running: boolean
+  stage: string
+  status: string
+  logs: string[]
+  step: number
+  total: number
+  error: string | null
+  errorStage: string | null
+  result: { pageUrl: string; audioUrl: string; date: string } | null
+  onReset: () => void
+}) {
+  const logEndRef = useRef<HTMLDivElement>(null)
+
+  // Auto-scroll logs
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [logs])
+  const stages = [
+    { key: "verify", label: "Verify" },
+    { key: "report", label: "Report" },
+    { key: "podcast", label: "Podcast" },
+    { key: "audio", label: "Audio" },
+    { key: "upload", label: "Upload" },
+    { key: "publish", label: "Publish" },
+  ]
+
+  const currentIdx = stages.findIndex((s) => s.key === stage)
+
+  return (
+    <div className="mx-auto max-w-2xl">
+      {/* Header */}
+      <div className="mb-6 text-center">
+        <h3 className="text-lg font-bold" style={{ color: "#FF6B35" }}>
+          YOMOO 每日AI快送
+        </h3>
+        <p className="mt-1 text-xs text-[hsl(var(--muted-foreground))]">One-Click Pipeline</p>
+      </div>
+
+      {/* Stage Progress */}
+      <div className="mb-6 flex items-center justify-center gap-1">
+        {stages.map((s, i) => {
+          const isActive = s.key === stage
+          const isDone = i < currentIdx || (result && !error)
+          const isFailed = error && s.key === errorStage
+          return (
+            <React.Fragment key={s.key}>
+              <div className="flex flex-col items-center gap-1">
+                <div
+                  className={`flex size-7 items-center justify-center rounded-full text-[10px] font-bold ${
+                    isFailed
+                      ? "bg-red-500 text-white"
+                      : isDone
+                        ? "text-white"
+                        : isActive
+                          ? "animate-pulse text-white"
+                          : "bg-[hsl(var(--muted))] text-[hsl(var(--muted-foreground))]"
+                  }`}
+                  style={
+                    isDone
+                      ? { background: "#22c55e" }
+                      : isActive && !isFailed
+                        ? { background: "#FF6B35" }
+                        : undefined
+                  }
+                >
+                  {isFailed ? "!" : isDone ? "✓" : i + 1}
+                </div>
+                <span
+                  className={`text-[9px] ${isActive ? "font-semibold" : "text-[hsl(var(--muted-foreground))]"}`}
+                >
+                  {s.label}
+                </span>
+              </div>
+              {i < stages.length - 1 && (
+                <div
+                  className={`mb-4 h-0.5 w-4 ${
+                    i < currentIdx || (result && !error)
+                      ? "bg-green-500"
+                      : "bg-[hsl(var(--border))]"
+                  }`}
+                />
+              )}
+            </React.Fragment>
+          )
+        })}
+      </div>
+
+      {/* Live Log Console */}
+      {(running || logs.length > 0) && (
+        <div className="mb-6">
+          {running && (
+            <div className="mb-3 flex items-center justify-center gap-2">
+              <div
+                className="size-4 animate-spin rounded-full border-2 border-[hsl(var(--border))]"
+                style={{ borderTopColor: "#FF6B35" }}
+              />
+              <p className="text-xs font-medium" style={{ color: "#FF6B35" }}>
+                {status}
+              </p>
+            </div>
+          )}
+          <div className="max-h-48 overflow-y-auto rounded-lg border border-[hsl(var(--border))] bg-[hsl(var(--muted))] p-3 font-mono text-[11px] leading-5 text-[hsl(var(--muted-foreground))]">
+            {logs.map((log, i) => {
+              const isStage = log.includes("▶ Stage:")
+              return (
+                <div
+                  key={i}
+                  className={isStage ? "mt-1 font-semibold" : ""}
+                  style={isStage ? { color: "#FF6B35" } : undefined}
+                >
+                  {log}
+                </div>
+              )
+            })}
+            <div ref={logEndRef} />
+          </div>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="mb-6 rounded-lg border border-red-300 bg-red-50 p-4 dark:border-red-800 dark:bg-red-950">
+          <p className="text-sm font-medium text-red-700 dark:text-red-300">
+            Failed at: {errorStage}
+          </p>
+          <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>
+          <button
+            onClick={onReset}
+            className="mt-3 rounded border border-red-300 px-3 py-1 text-xs text-red-600 hover:bg-red-100 dark:border-red-700 dark:text-red-400 dark:hover:bg-red-900"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Success */}
+      {result && !error && (
+        <div
+          className="rounded-lg border p-6"
+          style={{ borderColor: "rgba(255,107,53,0.3)", background: "rgba(255,107,53,0.05)" }}
+        >
+          <div className="mb-4 text-center">
+            <span className="text-2xl">🎉</span>
+            <h4 className="mt-1 text-sm font-semibold">Pipeline Complete!</h4>
+            <p className="mt-0.5 text-xs text-[hsl(var(--muted-foreground))]">
+              Episode {result.date} published successfully
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <a
+              href={result.pageUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white hover:opacity-90"
+              style={{ background: "linear-gradient(135deg, #FF6B35, #ff8f5e)" }}
+            >
+              View Published Page
+            </a>
+            <a
+              href={result.audioUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-sm font-medium hover:bg-[hsl(var(--muted))]"
+              style={{ borderColor: "#FF6B35", color: "#FF6B35" }}
+            >
+              Download Audio
+            </a>
+          </div>
+
+          <p className="mt-4 text-center text-[10px] text-[hsl(var(--muted-foreground))]">
+            GitHub Pages may take 1-2 minutes to deploy
+          </p>
+
+          <div className="mt-4 text-center">
+            <button
+              onClick={onReset}
+              className="text-xs text-[hsl(var(--muted-foreground))] hover:underline"
+            >
+              Back to Reports
+            </button>
           </div>
         </div>
       )}
@@ -269,6 +771,92 @@ function MarkdownRenderer({ content }: { content: string }) {
   return <div className="report-content" dangerouslySetInnerHTML={{ __html: html }} />
 }
 
+function AudioPlayer({ filePath, onExport }: { filePath: string; onExport: () => void }) {
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const [playing, setPlaying] = React.useState(false)
+  const [currentTime, setCurrentTime] = React.useState(0)
+  const [duration, setDuration] = React.useState(0)
+  const [audioSrc, setAudioSrc] = React.useState<string | null>(null)
+
+  // Load audio data via IPC (file:// is blocked by Electron security)
+  React.useEffect(() => {
+    window.api.getAudioData(filePath).then((dataUrl: string | null) => {
+      if (dataUrl) setAudioSrc(dataUrl)
+    })
+  }, [filePath])
+
+  const togglePlay = () => {
+    if (!audioRef.current) return
+    if (playing) {
+      audioRef.current.pause()
+    } else {
+      audioRef.current.play()
+    }
+    setPlaying(!playing)
+  }
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60)
+    const s = Math.floor(seconds % 60)
+    return `${m}:${s.toString().padStart(2, "0")}`
+  }
+
+  if (!audioSrc) {
+    return (
+      <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-4">
+        <div className="flex items-center gap-2 text-xs text-[hsl(var(--muted-foreground))]">
+          <div className="size-4 animate-spin rounded-full border-2 border-[hsl(var(--border))] border-t-purple-500" />
+          Loading audio...
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-4">
+      <audio
+        ref={audioRef}
+        src={audioSrc}
+        onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
+        onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
+        onEnded={() => setPlaying(false)}
+      />
+      <div className="flex items-center gap-3">
+        <button
+          onClick={togglePlay}
+          className="flex size-8 shrink-0 items-center justify-center rounded-full bg-purple-500 text-white hover:bg-purple-600"
+        >
+          {playing ? "⏸" : "▶"}
+        </button>
+        <div className="flex-1">
+          <div className="mb-1 flex items-center justify-between text-[10px] text-[hsl(var(--muted-foreground))]">
+            <span>{formatTime(currentTime)}</span>
+            <span>{formatTime(duration)}</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={duration || 0}
+            value={currentTime}
+            onChange={(e) => {
+              const t = Number(e.target.value)
+              if (audioRef.current) audioRef.current.currentTime = t
+              setCurrentTime(t)
+            }}
+            className="h-1 w-full cursor-pointer accent-purple-500"
+          />
+        </div>
+        <button
+          onClick={onExport}
+          className="shrink-0 rounded border border-purple-500/50 px-2 py-1 text-[10px] text-purple-600 hover:bg-purple-500/10 dark:text-purple-400"
+        >
+          Export
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // Inline PreferencesDialog component
 function PreferencesDialog({ onClose }: { onClose: () => void }) {
   const [prefs, setPrefs] = React.useState({
@@ -276,6 +864,14 @@ function PreferencesDialog({ onClose }: { onClose: () => void }) {
     interests: [] as string[],
     reportStyle: "detailed" as "concise" | "detailed",
     timeRange: 24,
+    minimaxApiKey: "",
+    ttsVoiceId: "English_Graceful_Lady",
+    ttsModel: "speech-2.8-hd",
+    githubToken: "",
+    githubOwner: "",
+    pipelineSchedule: "",
+    workerUrl: "",
+    workerSecret: "",
   })
   const [newInterest, setNewInterest] = React.useState("")
   const [loaded, setLoaded] = React.useState(false)
@@ -312,7 +908,7 @@ function PreferencesDialog({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="w-96 rounded-lg bg-[hsl(var(--background))] p-6 shadow-xl"
+        className="max-h-[80vh] w-96 overflow-y-auto rounded-lg bg-[hsl(var(--background))] p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="mb-4 text-sm font-semibold">Report Preferences</h3>
@@ -428,6 +1024,167 @@ function PreferencesDialog({ onClose }: { onClose: () => void }) {
           </div>
         </div>
 
+        {/* Divider */}
+        <hr className="my-4 border-[hsl(var(--border))]" />
+
+        <h4 className="mb-3 text-xs font-semibold text-[hsl(var(--muted-foreground))]">
+          TTS (MiniMax)
+        </h4>
+
+        {/* MiniMax API Key */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs text-[hsl(var(--muted-foreground))]">
+            MiniMax API Key
+          </label>
+          <input
+            type="password"
+            value={prefs.minimaxApiKey}
+            onChange={(e) => setPrefs({ ...prefs, minimaxApiKey: e.target.value })}
+            placeholder="Enter your MiniMax API key..."
+            className="w-full rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1.5 text-xs outline-none focus:border-[color:var(--accent-color)]"
+          />
+          <p className="mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
+            Get your API key from platform.minimax.io
+          </p>
+        </div>
+
+        {/* TTS Model */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs text-[hsl(var(--muted-foreground))]">
+            TTS Model
+          </label>
+          <select
+            value={prefs.ttsModel}
+            onChange={(e) => setPrefs({ ...prefs, ttsModel: e.target.value })}
+            className="w-full rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1.5 text-xs outline-none"
+          >
+            <option value="speech-2.8-hd">speech-2.8-hd (Best quality)</option>
+            <option value="speech-2.8-turbo">speech-2.8-turbo (Faster)</option>
+            <option value="speech-2.6-hd">speech-2.6-hd</option>
+            <option value="speech-2.6-turbo">speech-2.6-turbo</option>
+          </select>
+        </div>
+
+        {/* Voice ID */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs text-[hsl(var(--muted-foreground))]">Voice ID</label>
+          <input
+            type="text"
+            value={prefs.ttsVoiceId}
+            onChange={(e) => setPrefs({ ...prefs, ttsVoiceId: e.target.value })}
+            placeholder="e.g., English_Graceful_Lady"
+            className="w-full rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1.5 text-xs outline-none focus:border-[color:var(--accent-color)]"
+          />
+          <p className="mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
+            System voice ID or custom cloned voice ID
+          </p>
+        </div>
+
+        {/* Divider */}
+        <hr className="my-4 border-[hsl(var(--border))]" />
+
+        <h4 className="mb-3 text-xs font-semibold" style={{ color: "#FF6B35" }}>
+          YOMOO Pipeline (GitHub)
+        </h4>
+
+        {/* GitHub PAT */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs text-[hsl(var(--muted-foreground))]">
+            GitHub Personal Access Token
+          </label>
+          <input
+            type="password"
+            value={prefs.githubToken}
+            onChange={(e) => setPrefs({ ...prefs, githubToken: e.target.value })}
+            placeholder="ghp_..."
+            className="w-full rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1.5 text-xs outline-none focus:border-[color:var(--accent-color)]"
+          />
+          <p className="mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
+            Needs &quot;repo&quot; scope. Generate at github.com/settings/tokens
+          </p>
+        </div>
+
+        {/* GitHub Owner */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs text-[hsl(var(--muted-foreground))]">
+            GitHub Repo Owner
+          </label>
+          <input
+            type="text"
+            value={prefs.githubOwner}
+            onChange={(e) => setPrefs({ ...prefs, githubOwner: e.target.value })}
+            placeholder="Leave empty to use your username"
+            className="w-full rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1.5 text-xs outline-none focus:border-[color:var(--accent-color)]"
+          />
+          <p className="mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
+            Org or user that owns yomoo-daily repo (e.g. YOMOO-LLC)
+          </p>
+        </div>
+
+        {/* Pipeline Schedule */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs text-[hsl(var(--muted-foreground))]">
+            Daily Pipeline Schedule
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="time"
+              value={prefs.pipelineSchedule}
+              onChange={(e) => setPrefs({ ...prefs, pipelineSchedule: e.target.value })}
+              className="rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1.5 text-xs outline-none focus:border-[color:var(--accent-color)]"
+            />
+            {prefs.pipelineSchedule && (
+              <button
+                onClick={() => setPrefs({ ...prefs, pipelineSchedule: "" })}
+                className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-red-500"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          <p className="mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
+            Auto-run pipeline daily at this time. Leave empty to disable.
+          </p>
+        </div>
+
+        {/* Divider */}
+        <hr className="my-4 border-[hsl(var(--border))]" />
+
+        <h4 className="mb-3 text-xs font-semibold" style={{ color: "#FF6B35" }}>
+          Mailing List (Cloudflare Worker)
+        </h4>
+
+        {/* Worker URL */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs text-[hsl(var(--muted-foreground))]">
+            Cloudflare Worker URL
+          </label>
+          <input
+            type="text"
+            value={prefs.workerUrl || ""}
+            onChange={(e) => setPrefs({ ...prefs, workerUrl: e.target.value })}
+            placeholder="https://yomoo-subscribe-worker.yourname.workers.dev"
+            className="w-full rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1.5 text-xs outline-none focus:border-[color:var(--accent-color)]"
+          />
+        </div>
+
+        {/* Worker Secret */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs text-[hsl(var(--muted-foreground))]">
+            Worker API Secret
+          </label>
+          <input
+            type="password"
+            value={prefs.workerSecret || ""}
+            onChange={(e) => setPrefs({ ...prefs, workerSecret: e.target.value })}
+            placeholder="Shared secret for /subscribers endpoint"
+            className="w-full rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1.5 text-xs outline-none focus:border-[color:var(--accent-color)]"
+          />
+        </div>
+
+        {/* Subscriber Management */}
+        {prefs.workerUrl && prefs.workerSecret && <SubscriberManager />}
+
         {/* Actions */}
         <div className="flex justify-end gap-2">
           <button
@@ -443,6 +1200,196 @@ function PreferencesDialog({ onClose }: { onClose: () => void }) {
             Save
           </button>
         </div>
+      </div>
+    </div>
+  )
+}
+
+const PAGE_SIZE = 20
+
+function SubscriberManager() {
+  const [subscribers, setSubscribers] = React.useState<{ email: string; subscribed_at: string }[]>(
+    [],
+  )
+  const [loading, setLoading] = React.useState(false)
+  const [newEmail, setNewEmail] = React.useState("")
+  const [error, setError] = React.useState("")
+  const [expanded, setExpanded] = React.useState(false)
+  const [search, setSearch] = React.useState("")
+  const [page, setPage] = React.useState(0)
+
+  const loadSubscribers = React.useCallback(async () => {
+    setLoading(true)
+    setError("")
+    try {
+      const result = await window.api.listSubscribers()
+      if (result.success) {
+        setSubscribers(result.subscribers)
+      } else {
+        setError(result.error || "Failed to load")
+      }
+    } catch (err) {
+      setError(String(err))
+    }
+    setLoading(false)
+  }, [])
+
+  React.useEffect(() => {
+    loadSubscribers()
+  }, [loadSubscribers])
+
+  const handleAdd = async () => {
+    const email = newEmail.trim().toLowerCase()
+    if (!email || !email.includes("@")) {
+      setError("Please enter a valid email")
+      return
+    }
+    setError("")
+    const result = await window.api.addSubscriber(email)
+    if (result.success) {
+      setNewEmail("")
+      loadSubscribers()
+    } else {
+      setError(result.error || "Failed to add")
+    }
+  }
+
+  const handleRemove = async (email: string) => {
+    setError("")
+    const result = await window.api.removeSubscriber(email)
+    if (result.success) {
+      loadSubscribers()
+    } else {
+      setError(result.error || "Failed to remove")
+    }
+  }
+
+  const filtered = search
+    ? subscribers.filter((s) => s.email.toLowerCase().includes(search.toLowerCase()))
+    : subscribers
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE)
+  const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+
+  // Reset page when search changes
+  React.useEffect(() => {
+    setPage(0)
+  }, [search])
+
+  return (
+    <div className="mb-4">
+      <div className="mb-2 flex items-center justify-between">
+        <label className="text-xs font-medium text-[hsl(var(--muted-foreground))]">
+          Subscribers ({subscribers.length})
+        </label>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={loadSubscribers}
+            disabled={loading}
+            className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[color:var(--accent-color)]"
+          >
+            {loading ? "..." : "Refresh"}
+          </button>
+          {subscribers.length > 0 && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[color:var(--accent-color)]"
+            >
+              {expanded ? "Collapse" : "Manage"}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {error && <p className="mb-2 text-[10px] text-red-500">{error}</p>}
+
+      {/* Expanded subscriber list with search and pagination */}
+      {expanded && subscribers.length > 0 && (
+        <div className="mb-2">
+          {/* Search */}
+          {subscribers.length > PAGE_SIZE && (
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search subscribers..."
+              className="mb-1.5 w-full rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1 text-xs outline-none focus:border-[color:var(--accent-color)]"
+            />
+          )}
+
+          {/* List */}
+          <div className="max-h-40 space-y-1 overflow-y-auto">
+            {paged.map((sub) => (
+              <div
+                key={sub.email}
+                className="group flex items-center justify-between rounded border border-[hsl(var(--border))] px-2 py-1.5"
+              >
+                <div className="min-w-0 flex-1">
+                  <span className="text-xs">{sub.email}</span>
+                  <span className="ml-2 text-[10px] text-[hsl(var(--muted-foreground))]">
+                    {sub.subscribed_at}
+                  </span>
+                </div>
+                <button
+                  onClick={() => handleRemove(sub.email)}
+                  className="ml-2 hidden shrink-0 text-[10px] text-[hsl(var(--muted-foreground))] hover:text-red-500 group-hover:block"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="mt-1.5 flex items-center justify-between text-[10px] text-[hsl(var(--muted-foreground))]">
+              <button
+                onClick={() => setPage(Math.max(0, page - 1))}
+                disabled={page === 0}
+                className="hover:text-[color:var(--accent-color)] disabled:opacity-30"
+              >
+                Prev
+              </button>
+              <span>
+                {page + 1} / {totalPages}
+                {search && ` (${filtered.length} matched)`}
+              </span>
+              <button
+                onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
+                disabled={page >= totalPages - 1}
+                className="hover:text-[color:var(--accent-color)] disabled:opacity-30"
+              >
+                Next
+              </button>
+            </div>
+          )}
+
+          {search && filtered.length === 0 && (
+            <p className="mt-1 text-[10px] text-[hsl(var(--muted-foreground))]">No matches found</p>
+          )}
+        </div>
+      )}
+
+      {subscribers.length === 0 && !loading && (
+        <p className="mb-2 text-[10px] text-[hsl(var(--muted-foreground))]">No subscribers yet</p>
+      )}
+
+      {/* Add subscriber */}
+      <div className="flex gap-1">
+        <input
+          type="email"
+          value={newEmail}
+          onChange={(e) => setNewEmail(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+          placeholder="email@example.com"
+          className="flex-1 rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1 text-xs outline-none focus:border-[color:var(--accent-color)]"
+        />
+        <button
+          onClick={handleAdd}
+          className="rounded px-2 py-1 text-xs font-medium text-white"
+          style={{ background: "#E8722A" }}
+        >
+          Add
+        </button>
       </div>
     </div>
   )

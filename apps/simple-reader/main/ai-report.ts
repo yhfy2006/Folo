@@ -2,6 +2,7 @@ import { spawn } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 
+import { app } from "electron"
 import path from "pathe"
 
 import type { Entry } from "./database"
@@ -63,7 +64,8 @@ export async function generateReport(
     `SELECT e.*, f.title as feed_title, f.category as feed_category
      FROM entries e
      LEFT JOIN feeds f ON e.feed_id = f.id
-     WHERE e.published_at > ? OR e.inserted_at > ?
+     WHERE (e.published_at > ? OR e.inserted_at > ?)
+       AND e.id NOT IN (SELECT entry_id FROM report_entries)
      ORDER BY e.published_at DESC`,
     [cutoffSec, cutoffSec],
   )
@@ -143,10 +145,33 @@ export async function generateReport(
     const now = Math.floor(Date.now() / 1000)
     const title = generateReportTitle(prefs)
     execute(
-      "INSERT INTO reports (id, title, content, language, time_range, entry_count, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      [reportId, title, fullContent, prefs.language, prefs.timeRange, enrichedEntries.length, now],
+      "INSERT INTO reports (id, title, content, language, time_range, entry_count, type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [
+        reportId,
+        title,
+        fullContent,
+        prefs.language,
+        prefs.timeRange,
+        enrichedEntries.length,
+        "report",
+        now,
+      ],
     )
-    console.info("[ai-report] Report saved:", reportId)
+
+    // Record which entries were used so they won't be selected again
+    for (const entry of enrichedEntries) {
+      execute("INSERT OR IGNORE INTO report_entries (report_id, entry_id) VALUES (?, ?)", [
+        reportId,
+        entry.id,
+      ])
+    }
+    console.info(
+      "[ai-report] Report saved:",
+      reportId,
+      "with",
+      enrichedEntries.length,
+      "entries recorded",
+    )
 
     onDone()
   } catch (err) {
@@ -390,6 +415,128 @@ function parseSelectedIds(result: string, entries: EntryWithFeed[]): string[] {
     console.info("[ai-report] Failed to parse screening result:", err)
     return entries.map((e) => e.id)
   }
+}
+
+/**
+ * Convert an existing report into a podcast broadcast script using Claude CLI.
+ * Reads the podcast-script skill and the methodology file as prompt context.
+ */
+export async function generatePodcastScript(
+  reportContent: string,
+  onChunk: (text: string) => void,
+  onStatus: (status: string) => void,
+  onDone: () => void,
+  onError: (error: string) => void,
+): Promise<void> {
+  const prefs = loadPreferences()
+  onStatus("Converting report to podcast script...")
+
+  const skillContent = readSkill("podcast-script")
+
+  // Read the methodology file for additional context
+  let methodology = ""
+  try {
+    const appPath = app.getAppPath()
+    const methodologyPath = path.join(appPath, "resources", "小Lin说视频文案方法论.md")
+    methodology = fs.readFileSync(methodologyPath, "utf-8")
+    // Strip frontmatter
+    methodology = methodology.replace(/^---[\s\S]*?---\n*/, "").trim()
+  } catch {
+    console.warn("[ai-report] Could not read methodology file, using skill only")
+  }
+
+  const langInstruction = getLanguageInstruction(prefs.language)
+
+  // Format today's date in a natural spoken style (e.g. "2026年2月20日")
+  const now = new Date()
+  const spokenDate = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`
+
+  const prompt = `${skillContent}
+
+${methodology ? `## Reference Methodology\n\n${methodology}\n\n` : ""}${langInstruction}
+
+## Podcast Branding
+
+Show name: YOMOO 每日AI快送
+Date: ${spokenDate}
+
+The script MUST begin with a greeting to the audience, for example:
+"大家好，欢迎来到${spokenDate}的 YOMOO 每日AI快送。"
+
+The script MUST end with:
+1. A call-to-action encouraging sharing: ask listeners to share or forward the show if they find it helpful, and mention they can reply to the email with suggestions or feedback.
+2. A sign-off that invites listeners back tomorrow.
+
+Example ending:
+"如果您觉得我们的节目对您有帮助，请帮忙分享、转发给您的朋友，也欢迎直接回复邮件给我们提建议。好了，今天就到这里，我们明天见！"
+
+## Source Report to Convert
+
+${reportContent}
+
+IMPORTANT: Output ONLY the podcast script as plain spoken text. No markdown formatting, no headings, no bullet points. Just natural flowing speech paragraphs separated by blank lines.`
+
+  console.info("[ai-report] Podcast prompt length:", prompt.length, "chars")
+
+  let fullContent = ""
+  try {
+    await runClaudeStreaming(prompt, (chunk) => {
+      fullContent += chunk
+      onChunk(chunk)
+    })
+
+    // Save podcast script to database
+    const scriptId = Math.random().toString(36).slice(2) + Date.now().toString(36)
+    const now = Math.floor(Date.now() / 1000)
+    const title = `Podcast Script - ${new Date().toLocaleDateString("en-CA")}`
+    execute(
+      "INSERT INTO reports (id, title, content, language, time_range, entry_count, type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      [scriptId, title, fullContent, prefs.language, 0, 0, "podcast", now],
+    )
+    console.info("[ai-report] Podcast script saved:", scriptId)
+
+    onDone()
+  } catch (err) {
+    onError(`Claude CLI error during podcast script generation: ${err}`)
+  }
+}
+
+/**
+ * Promise-based wrapper: generates report and returns the full content as a string.
+ */
+export async function generateReportToString(onStatus: (status: string) => void): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let fullContent = ""
+    generateReport(
+      (chunk) => {
+        fullContent += chunk
+      },
+      onStatus,
+      () => resolve(fullContent),
+      (error) => reject(new Error(error)),
+    ).catch(reject)
+  })
+}
+
+/**
+ * Promise-based wrapper: generates podcast script and returns it as a string.
+ */
+export async function generatePodcastScriptToString(
+  reportContent: string,
+  onStatus: (status: string) => void,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    let fullContent = ""
+    generatePodcastScript(
+      reportContent,
+      (chunk) => {
+        fullContent += chunk
+      },
+      onStatus,
+      () => resolve(fullContent),
+      (error) => reject(new Error(error)),
+    ).catch(reject)
+  })
 }
 
 function stripHtml(html: string): string {

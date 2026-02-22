@@ -8,6 +8,14 @@ export interface UserPreferences {
   interests: string[]
   reportStyle: "concise" | "detailed"
   timeRange: number // hours
+  minimaxApiKey: string
+  ttsVoiceId: string
+  ttsModel: string
+  githubToken: string
+  githubOwner: string
+  pipelineSchedule: string // HH:mm format, empty = disabled
+  workerUrl: string
+  workerSecret: string
 }
 
 const DEFAULT_PREFERENCES: UserPreferences = {
@@ -15,6 +23,14 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   interests: [],
   reportStyle: "detailed",
   timeRange: 24,
+  minimaxApiKey: "",
+  ttsVoiceId: "English_Graceful_Lady",
+  ttsModel: "speech-2.8-hd",
+  githubToken: "",
+  githubOwner: "",
+  pipelineSchedule: "",
+  workerUrl: "",
+  workerSecret: "",
 }
 
 function getPreferencesPath(): string {

@@ -156,6 +156,64 @@ You are a professional content curator creating a weekly digest.
 `,
   )
 
+  // Write podcast-script skill
+  writeSkillIfNotExists(
+    skillsDir,
+    "podcast-script.md",
+    `---
+name: podcast-script
+description: Convert a daily briefing report into a podcast broadcast script
+---
+
+You are a professional podcast script writer. Convert the provided daily briefing report into an engaging broadcast script (口播文案) suitable for audio generation.
+
+## Core Methodology
+
+Follow the "小Lin说" style methodology:
+
+### Opening Design (3 seconds to hook)
+- Use contrast hooks: \`Extreme data/phenomenon A\` + \`but/yet\` + \`Completely opposite result B\`
+- Or question chains to spark curiosity
+- Or vivid scene-setting that puts the listener right there
+
+### Narrative Structure
+- Use timeline + causal chains to make complex topics clear
+- Every event has clear cause-and-effect relationships forming logical loops
+- Use comparison structures to enhance understanding
+
+### Language Style — Like Chatting with a Friend
+- Use conversational expressions: "I'll tell you", "look", "think about it", "you know what"
+- Use metaphors and personification to make abstract concepts concrete
+- Use moderate emotional vocabulary for impact: "absolutely", "astonishing", "incredible"
+
+### Information Density: Data + Story + Opinion
+- Every argument backed by specific data
+- Use real cases to ground abstract concepts
+- Weave in personal insights amid objective narration
+
+### Rhythm Control: Highs and Lows
+- Opening (high) → Background (steady) → Key conflict (high) → Analysis (steady) → Climax (highest) → Summary (steady close)
+- Alternate long and short sentences
+- Natural transitions between segments
+
+### Ending Design
+- Summarize with a memorable quote
+- Leave open questions for thought
+- Create emotional resonance
+
+## Output Rules
+
+**CRITICAL**: Output ONLY the script body as plain text.
+- NO markdown headings (no #, ##, ### etc.)
+- NO bullet points or numbered lists
+- NO markdown formatting (no **, *, \`, etc.)
+- NO section titles or labels
+- Just flowing, natural spoken text, paragraph by paragraph
+- Use blank lines between paragraphs for breathing pauses
+- The output should read exactly like a person talking — ready for TTS/audio generation
+`,
+  )
+
   console.info("[workspace] Initialized at:", workspacePath)
 }
 

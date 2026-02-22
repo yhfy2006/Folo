@@ -42,6 +42,93 @@ const api = {
     ipcRenderer.on("report-error", handler)
     return () => ipcRenderer.removeListener("report-error", handler)
   },
+
+  // Podcast Script
+  generatePodcastScript: (reportContent: string) =>
+    ipcRenderer.invoke("generate-podcast-script", reportContent),
+  exportPodcastScript: (content: string) => ipcRenderer.invoke("export-podcast-script", content),
+  onPodcastChunk: (callback: (chunk: string) => void) => {
+    const handler = (_event: any, chunk: string) => callback(chunk)
+    ipcRenderer.on("podcast-chunk", handler)
+    return () => ipcRenderer.removeListener("podcast-chunk", handler)
+  },
+  onPodcastStatus: (callback: (status: string) => void) => {
+    const handler = (_event: any, status: string) => callback(status)
+    ipcRenderer.on("podcast-status", handler)
+    return () => ipcRenderer.removeListener("podcast-status", handler)
+  },
+  onPodcastDone: (callback: () => void) => {
+    ipcRenderer.on("podcast-done", callback)
+    return () => ipcRenderer.removeListener("podcast-done", callback)
+  },
+  onPodcastError: (callback: (error: string) => void) => {
+    const handler = (_event: any, error: string) => callback(error)
+    ipcRenderer.on("podcast-error", handler)
+    return () => ipcRenderer.removeListener("podcast-error", handler)
+  },
+
+  // Audio TTS
+  generateAudio: (text: string) => ipcRenderer.invoke("generate-audio", text),
+  exportAudio: (sourcePath: string) => ipcRenderer.invoke("export-audio", sourcePath),
+  getAudioData: (filePath: string) => ipcRenderer.invoke("get-audio-data", filePath),
+  onAudioStatus: (callback: (status: string) => void) => {
+    const handler = (_event: any, status: string) => callback(status)
+    ipcRenderer.on("audio-status", handler)
+    return () => ipcRenderer.removeListener("audio-status", handler)
+  },
+  onAudioDone: (callback: (filePath: string) => void) => {
+    const handler = (_event: any, filePath: string) => callback(filePath)
+    ipcRenderer.on("audio-done", handler)
+    return () => ipcRenderer.removeListener("audio-done", handler)
+  },
+  onAudioError: (callback: (error: string) => void) => {
+    const handler = (_event: any, error: string) => callback(error)
+    ipcRenderer.on("audio-error", handler)
+    return () => ipcRenderer.removeListener("audio-error", handler)
+  },
+
+  // Subscriber Management
+  listSubscribers: () => ipcRenderer.invoke("list-subscribers"),
+  addSubscriber: (email: string) => ipcRenderer.invoke("add-subscriber", email),
+  removeSubscriber: (email: string) => ipcRenderer.invoke("remove-subscriber", email),
+
+  // YOMOO Pipeline
+  runYomooPipeline: () => ipcRenderer.invoke("run-yomoo-pipeline"),
+  onPipelineStage: (callback: (stage: string) => void) => {
+    const handler = (_event: any, stage: string) => callback(stage)
+    ipcRenderer.on("pipeline-stage", handler)
+    return () => ipcRenderer.removeListener("pipeline-stage", handler)
+  },
+  onPipelineStatus: (callback: (status: string) => void) => {
+    const handler = (_event: any, status: string) => callback(status)
+    ipcRenderer.on("pipeline-status", handler)
+    return () => ipcRenderer.removeListener("pipeline-status", handler)
+  },
+  onPipelineProgress: (callback: (step: number, total: number) => void) => {
+    const handler = (_event: any, step: number, total: number) => callback(step, total)
+    ipcRenderer.on("pipeline-progress", handler)
+    return () => ipcRenderer.removeListener("pipeline-progress", handler)
+  },
+  onPipelineDone: (
+    callback: (result: { pageUrl: string; audioUrl: string; date: string }) => void,
+  ) => {
+    const handler = (_event: any, result: { pageUrl: string; audioUrl: string; date: string }) =>
+      callback(result)
+    ipcRenderer.on("pipeline-done", handler)
+    return () => ipcRenderer.removeListener("pipeline-done", handler)
+  },
+  onPipelineError: (callback: (stage: string, error: string) => void) => {
+    const handler = (_event: any, stage: string, error: string) => callback(stage, error)
+    ipcRenderer.on("pipeline-error", handler)
+    return () => ipcRenderer.removeListener("pipeline-error", handler)
+  },
+  onPipelineAutoTrigger: (callback: () => void) => {
+    ipcRenderer.on("pipeline-auto-trigger", callback)
+    return () => ipcRenderer.removeListener("pipeline-auto-trigger", callback)
+  },
+
+  // Scheduler
+  getSchedulerStatus: () => ipcRenderer.invoke("get-scheduler-status"),
 }
 
 contextBridge.exposeInMainWorld("api", api)
