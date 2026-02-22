@@ -543,6 +543,7 @@ function generateRootIndexHtml(firstEpisodeLink: string): string {
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
   </style>
+  <script defer src="https://cloud.umami.is/script.js" data-website-id="8864a5e3-4f85-4cb6-9565-d7a9538027df"></script>
 </head>
 <body>
   <header class="site-header">
@@ -567,6 +568,19 @@ function generateRootIndexHtml(firstEpisodeLink: string): string {
     <div class="footer-brand">YOMOO 每日AI快送 &copy; ${new Date().getFullYear()}</div>
     <div class="footer-powered">Powered by YOMOO LLC</div>
   </footer>
+  <script>
+  (function() {
+    var u = typeof umami !== 'undefined' ? umami : null;
+    function t(name, data) { if (u) u.track(name, data || {}); }
+    // Track subscribe button click
+    var sub = document.querySelector('.subscribe-btn');
+    if (sub) sub.addEventListener('click', function() { t('subscribe-click'); });
+    // Track episode clicks
+    document.querySelectorAll('.episode-list a').forEach(function(a) {
+      a.addEventListener('click', function() { t('episode-click', { episode: a.textContent.trim() }); });
+    });
+  })();
+  </script>
 </body>
 </html>`
 }
@@ -641,6 +655,7 @@ function generateSubscribePageHtml(workerUrl: string): string {
     .footer a{color:var(--text-muted);text-decoration:none}
     .footer a:hover{color:var(--y-amber)}
   </style>
+  <script defer src="https://cloud.umami.is/script.js" data-website-id="8864a5e3-4f85-4cb6-9565-d7a9538027df"></script>
 </head>
 <body>
   <div class="card">
@@ -664,17 +679,20 @@ function generateSubscribePageHtml(workerUrl: string): string {
       var email=document.getElementById('email').value.trim();
       var msg=document.getElementById('msg');
       var btn=document.getElementById('btn');
-      if(!email||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)){msg.className='message error';msg.textContent='Please enter a valid email (e.g. name@example.com)';return}
+      if(!email||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)){msg.className='message error';msg.textContent='Please enter a valid email (e.g. name@example.com)';if(typeof umami!=='undefined')umami.track('subscribe-validation-error');return}
       btn.disabled=true;btn.textContent='...';msg.textContent='';
       try{
         var resp=await fetch('\${safeWorkerUrl}/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email})});
         var data=await resp.json();
-        if(data.success){msg.className='message success';msg.textContent='Subscribed! Check your inbox tomorrow.';document.getElementById('email').value=''}
-        else{msg.className='message error';msg.textContent=data.error||'Something went wrong'}
+        if(data.success){msg.className='message success';msg.textContent='Subscribed! Check your inbox tomorrow.';document.getElementById('email').value='';if(typeof umami!=='undefined')umami.track('subscribe-success')}
+        else{msg.className='message error';msg.textContent=data.error||'Something went wrong';if(typeof umami!=='undefined')umami.track('subscribe-error',{error:data.error||'unknown'})}
       }catch(e){msg.className='message error';msg.textContent='Network error, please try again'}
       btn.disabled=false;btn.textContent='Subscribe';
     }
     document.getElementById('email').addEventListener('keydown',function(e){if(e.key==='Enter')subscribe()});
+    // Track browse episodes link
+    var _bel=document.querySelector('.footer a');
+    if(_bel)_bel.addEventListener('click',function(){if(typeof umami!=='undefined')umami.track('browse-episodes');});
   </script>
 </body>
 </html>`

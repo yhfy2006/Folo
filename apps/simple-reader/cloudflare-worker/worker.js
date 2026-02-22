@@ -90,6 +90,85 @@ function timingSafeEqual(a, b) {
 }
 
 // ---------------------------------------------------------------------------
+// Svix webhook signature verification (used by Resend)
+// ---------------------------------------------------------------------------
+
+const UMAMI_WEBSITE_ID = "8864a5e3-4f85-4cb6-9565-d7a9538027df"
+const UMAMI_COLLECT_URL = "https://cloud.umami.is/api/send"
+const ALLOWED_SENDER = "daily@yomoo.net"
+
+/**
+ * Verify Svix webhook signature (Resend uses Svix under the hood).
+ * Secret format: "whsec_<base64-key>"
+ */
+async function verifySvixSignature(body, headers, secret) {
+  const msgId = headers.get("svix-id")
+  const msgTimestamp = headers.get("svix-timestamp")
+  const msgSignature = headers.get("svix-signature")
+
+  if (!msgId || !msgTimestamp || !msgSignature) return false
+
+  // Check timestamp is within 5 minutes to prevent replay attacks
+  const now = Math.floor(Date.now() / 1000)
+  const ts = Number.parseInt(msgTimestamp, 10)
+  if (Math.abs(now - ts) > 300) return false
+
+  // Decode the secret (strip "whsec_" prefix, base64-decode)
+  const rawSecret = secret.startsWith("whsec_") ? secret.slice(6) : secret
+  const keyBytes = Uint8Array.from(atob(rawSecret), (c) => c.codePointAt(0))
+
+  // Sign: "{msg_id}.{timestamp}.{body}"
+  const toSign = `${msgId}.${msgTimestamp}.${body}`
+  const enc = new TextEncoder()
+  const key = await crypto.subtle.importKey(
+    "raw",
+    keyBytes,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  )
+  const sig = await crypto.subtle.sign("HMAC", key, enc.encode(toSign))
+  const computed = `v1,${btoa(String.fromCodePoint(...new Uint8Array(sig)))}`
+
+  // msgSignature may contain multiple space-separated signatures
+  const signatures = msgSignature.split(" ")
+  return signatures.some((s) => s.trim() === computed)
+}
+
+/**
+ * Map Resend event type to Umami event name.
+ */
+function resendEventToUmami(type) {
+  const map = {
+    "email.delivered": "email-delivered",
+    "email.opened": "email-opened",
+    "email.clicked": "email-clicked",
+    "email.bounced": "email-bounced",
+    "email.complained": "email-complained",
+  }
+  return map[type] || null
+}
+
+/**
+ * Forward a Resend webhook event to Umami as a custom event.
+ */
+async function sendToUmami(eventName, data) {
+  const payload = {
+    website: UMAMI_WEBSITE_ID,
+    hostname: "daily.yomoo.net",
+    url: "/email",
+    name: eventName,
+    data,
+  }
+
+  await fetch(UMAMI_COLLECT_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "User-Agent": "YOMOO-Worker/1.0" },
+    body: JSON.stringify({ payload }),
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Route handlers
 // ---------------------------------------------------------------------------
 
@@ -139,6 +218,59 @@ async function handleUnsubscribe(request, env) {
   await env.SUBSCRIBERS.delete(`sub:${email}`)
 
   return htmlResponse(200, unsubscribeSuccessPage(email))
+}
+
+async function handleResendWebhook(request, env) {
+  const webhookSecret = env.RESEND_WEBHOOK_SECRET
+  if (!webhookSecret) {
+    return jsonResponse(500, { error: "Webhook secret not configured" })
+  }
+
+  const body = await request.text()
+
+  // Verify Svix signature
+  const valid = await verifySvixSignature(body, request.headers, webhookSecret)
+  if (!valid) {
+    return jsonResponse(401, { error: "Invalid signature" })
+  }
+
+  let event
+  try {
+    event = JSON.parse(body)
+  } catch {
+    return jsonResponse(400, { error: "Invalid JSON" })
+  }
+
+  const eventType = event.type
+  const eventData = event.data || {}
+
+  // Filter: only process events from daily@yomoo.net
+  const { from } = eventData
+  if (!from || !from.includes(ALLOWED_SENDER)) {
+    return jsonResponse(200, { skipped: true, reason: "sender not matched" })
+  }
+
+  // Map to Umami event
+  const umamiEvent = resendEventToUmami(eventType)
+  if (!umamiEvent) {
+    return jsonResponse(200, { skipped: true, reason: "unmapped event type" })
+  }
+
+  // Build tracking data
+  const trackingData = {
+    type: eventType,
+    subject: eventData.subject || "",
+    to: eventData.to ? (Array.isArray(eventData.to) ? eventData.to.length : 1) : 0,
+  }
+
+  // For click events, include the clicked URL
+  if (eventType === "email.clicked" && eventData.click && eventData.click.link) {
+    trackingData.link = eventData.click.link
+  }
+
+  await sendToUmami(umamiEvent, trackingData)
+
+  return jsonResponse(200, { success: true, event: umamiEvent })
 }
 
 async function handleListSubscribers(request, env, cors) {
@@ -301,6 +433,10 @@ export default {
       return handleListSubscribers(request, env, cors)
     }
 
+    if (url.pathname === "/webhook/resend" && request.method === "POST") {
+      return handleResendWebhook(request, env)
+    }
+
     return jsonResponse(404, { error: "Not found" }, cors)
   },
 }
@@ -317,5 +453,7 @@ export {
   isAllowedOrigin,
   isValidEmail,
   normalizeEmail,
+  resendEventToUmami,
   timingSafeEqual,
+  verifySvixSignature,
 }

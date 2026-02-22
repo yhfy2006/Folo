@@ -530,6 +530,7 @@ export function generateHtmlPage(
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 2px; }
   </style>
+  <script defer src="https://cloud.umami.is/script.js" data-website-id="8864a5e3-4f85-4cb6-9565-d7a9538027df"></script>
 </head>
 <body>
 
@@ -601,10 +602,73 @@ export function generateHtmlPage(
       document.querySelector('[data-tab="' + tab + '"]').classList.add('active');
       document.getElementById('panel-' + tab).classList.add('active');
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      if (typeof umami !== 'undefined') umami.track('tab-switch', { tab: tab });
     }
   </script>`
       : ""
   }
+
+  <script>
+  (function() {
+    var u = typeof umami !== 'undefined' ? umami : null;
+    function t(name, data) { if (u) u.track(name, data || {}); }
+
+    // --- Audio tracking ---
+    var audio = document.querySelector('.audio-player audio');
+    if (audio) {
+      var milestones = [25, 50, 75, 100];
+      var reached = {};
+      audio.addEventListener('play', function() { t('audio-play'); });
+      audio.addEventListener('pause', function() {
+        if (!audio.ended) t('audio-pause', { time: Math.round(audio.currentTime) });
+      });
+      audio.addEventListener('ended', function() { t('audio-complete'); });
+      audio.addEventListener('timeupdate', function() {
+        if (!audio.duration) return;
+        var pct = Math.round(audio.currentTime / audio.duration * 100);
+        for (var i = 0; i < milestones.length; i++) {
+          if (pct >= milestones[i] && !reached[milestones[i]]) {
+            reached[milestones[i]] = true;
+            t('audio-progress', { milestone: milestones[i] });
+          }
+        }
+      });
+    }
+
+    // --- MP3 download tracking ---
+    var dl = document.querySelector('.audio-download');
+    if (dl) dl.addEventListener('click', function() { t('mp3-download'); });
+
+    // --- Outbound link tracking ---
+    document.addEventListener('click', function(e) {
+      var a = e.target.closest('a[href]');
+      if (!a) return;
+      var href = a.getAttribute('href');
+      if (href && href.startsWith('http') && !href.includes('daily.yomoo.net')) {
+        t('outbound-link', { url: href });
+      }
+    });
+
+    // --- "所有期刊" link tracking ---
+    var allEpisodes = document.querySelector('.site-footer a[href*="index.html"]');
+    if (allEpisodes) allEpisodes.addEventListener('click', function() { t('nav-all-episodes'); });
+
+    // --- Scroll depth tracking ---
+    var scrollMarks = {};
+    var thresholds = [25, 50, 75, 100];
+    window.addEventListener('scroll', function() {
+      var h = document.documentElement.scrollHeight - window.innerHeight;
+      if (h <= 0) return;
+      var pct = Math.round(window.scrollY / h * 100);
+      for (var i = 0; i < thresholds.length; i++) {
+        if (pct >= thresholds[i] && !scrollMarks[thresholds[i]]) {
+          scrollMarks[thresholds[i]] = true;
+          t('scroll-depth', { depth: thresholds[i] });
+        }
+      }
+    });
+  })();
+  </script>
 
 </body>
 </html>`
