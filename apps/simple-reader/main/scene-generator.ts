@@ -36,6 +36,7 @@ export interface ScenesJson {
   scenes: Scene[]
   thumbnailTitle?: string
   youtubeTitle?: string
+  subtitles?: SubtitleLine[]
 }
 
 /**
@@ -417,333 +418,215 @@ export interface SubtitleLine {
 }
 
 /**
- * Timestamp for each character in the original script, derived from
- * LCS alignment with Deepgram word-level timestamps.
- */
-interface CharTimestamp {
-  char: string
-  start: number
-  end: number
-}
-
-/**
- * Generate subtitle lines from original script text, using LCS alignment
- * with Deepgram words to get precise per-character timestamps.
+ * Generate subtitle lines using Claude CLI with subtasks to correct Deepgram STT errors.
  *
- * Algorithm:
- * 1. For each aligned segment, collect the Deepgram words in its time range
- * 2. Strip punctuation from both original text and Deepgram text
- * 3. Use LCS to align characters, transferring Deepgram timestamps to original chars
- * 4. Interpolate timestamps for unmatched characters (punctuation, STT gaps)
- * 5. Split into subtitle lines at natural punctuation breaks
+ * Uses a single `claude -p` call with `--agents` to define a subtitle-processor subagent.
+ * Claude dispatches each batch as a parallel subtask via the Task tool internally,
+ * then combines and returns all subtitle lines.
  */
-export function generateSubtitles(
+export async function generateSubtitlesWithLLM(
   alignedSegments: AlignedSegment[],
   deepgramWords: DeepgramWord[],
-): SubtitleLine[] {
-  const allCharTimestamps: CharTimestamp[] = []
-
-  for (const segment of alignedSegments) {
-    const text = segment.text.trim()
-    if (text.length === 0) continue
-
-    // Collect Deepgram words in this segment's time range
-    const segWords = deepgramWords.filter(
-      (w) => w.start >= segment.start - 0.2 && w.end <= segment.end + 0.2,
-    )
-
-    // Align and get per-character timestamps
-    const charTs = alignCharTimestamps(text, segWords, segment.start, segment.end)
-    allCharTimestamps.push(...charTs)
+  onStatus?: (status: string) => void,
+): Promise<SubtitleLine[]> {
+  if (alignedSegments.length === 0 || deepgramWords.length === 0) {
+    return []
   }
 
-  // Split into subtitle lines at punctuation breaks
-  return splitIntoSubtitleLines(allCharTimestamps)
+  onStatus?.("Generating subtitles with Claude subtasks...")
+
+  // Step 1: Collect Deepgram words for each segment, group into batches
+  const BATCH_SIZE = 4
+  const batches: { paragraphs: string[]; words: { word: string; start: number; end: number }[] }[] =
+    []
+
+  for (let i = 0; i < alignedSegments.length; i += BATCH_SIZE) {
+    const slice = alignedSegments.slice(i, i + BATCH_SIZE)
+    const paragraphs: string[] = []
+    const words: { word: string; start: number; end: number }[] = []
+
+    for (const seg of slice) {
+      paragraphs.push(seg.text)
+      for (const w of deepgramWords.filter(
+        (w) => w.start >= seg.start - 0.3 && w.end <= seg.end + 0.3,
+      )) {
+        words.push({ word: w.word, start: w.start, end: w.end })
+      }
+    }
+
+    batches.push({ paragraphs, words })
+  }
+
+  // Step 2: Define subtitle-processor subagent
+  const agents = {
+    "subtitle-processor": {
+      description:
+        "Processes a batch of podcast segments: corrects STT errors against original script text and outputs subtitle lines with timestamps as JSON.",
+      prompt: `你是字幕校对专家。用户会给你一段播客的原始台词和语音识别（STT）词时间戳。
+STT 有精确时间但文字可能有错（同音字、英文名乱码等）。
+请参考原始台词校正文字，分割成字幕行。
+
+规则：
+1. 每行字幕 8-16 个字符，在自然语句或标点符号处断句
+2. 每行 start/end 时间从 STT 词时间戳中取得
+3. 字幕文本使用原始台词的正确文字（修正 STT 错误）
+4. STT 丢失词时，根据前后时间戳估算
+5. 中文引号用「」不用""
+6. 只输出纯 JSON 数组，不要 markdown 代码块
+
+输出格式：[{"text": "字幕文本", "start": 0.88, "end": 2.4}, ...]`,
+      model: "sonnet",
+    },
+  }
+
+  // Step 3: Build main orchestration prompt
+  const batchDescriptions = batches
+    .map(
+      (b, i) =>
+        `--- BATCH ${i + 1} ---\n原始台词：\n${b.paragraphs.join("\n\n")}\n\nSTT 词时间戳：\n${JSON.stringify(b.words)}`,
+    )
+    .join("\n\n")
+
+  const prompt = `你是字幕生成调度器。我有 ${batches.length} 批播客字幕数据需要处理。
+
+请为每一批数据使用 subtitle-processor 子任务（通过 Task 工具）并行处理。每批发给 subtitle-processor 时，把该批的「原始台词」和「STT 词时间戳」作为 prompt 传入。
+
+所有子任务完成后，把所有批次返回的 JSON 数组合并为一个大数组，按 start 时间排序，输出最终的纯 JSON 数组（不要 markdown 代码块）。
+
+数据如下：
+
+${batchDescriptions}
+
+最终输出格式：[{"text": "...", "start": 0.88, "end": 2.4}, ...]`
+
+  try {
+    const result = await runClaude(prompt, [
+      "--agents",
+      JSON.stringify(agents),
+      "--dangerously-skip-permissions",
+    ])
+
+    // Parse the combined JSON array from Claude's response
+    const allSubtitles = parseSubtitleJson(result)
+    console.info(`[subtitles] Got ${allSubtitles.length} subtitle lines from Claude subtasks`)
+
+    // Step 4: Post-process
+    return postProcessSubtitles(allSubtitles)
+  } catch (err) {
+    console.info("[subtitles] Claude subtask orchestration failed:", err)
+    return []
+  }
 }
 
 /**
- * Align original text characters with Deepgram word timestamps using LCS.
- * Returns a timestamp for every character in the original text.
+ * Parse subtitle JSON from Claude's response text.
+ * Tries JSON.parse first, falls back to line-by-line extraction.
  */
-function alignCharTimestamps(
-  originalText: string,
-  segWords: DeepgramWord[],
-  segStart: number,
-  segEnd: number,
-): CharTimestamp[] {
-  // Build flat array of Deepgram characters with timestamps
-  const dgChars: { char: string; start: number; end: number }[] = []
-  for (const word of segWords) {
-    // Each Deepgram "word" is usually a single Chinese character
-    // Distribute the word's time across its characters
-    const chars = [...word.word.toLowerCase()]
-    const charDuration = (word.end - word.start) / chars.length
-    for (const [i, char] of chars.entries()) {
-      dgChars.push({
-        char: char!,
-        start: word.start + i * charDuration,
-        end: word.start + (i + 1) * charDuration,
-      })
-    }
+function parseSubtitleJson(text: string): SubtitleLine[] {
+  const jsonMatch = text.match(/\[[\s\S]*\]/)
+  if (!jsonMatch) {
+    console.info("[subtitles] No JSON array found in response")
+    return []
   }
 
-  // Strip punctuation/whitespace from original to get matchable characters
-  const origChars = [...originalText]
-  const origClean: { idx: number; char: string }[] = []
-  for (const [i, origChar] of origChars.entries()) {
-    const c = origChar!.toLowerCase()
-    if (!/[\s，！？；："'（）·\u200b-\u200f\u2010-\u206f\u3001-\u303f]/.test(c)) {
-      origClean.push({ idx: i, char: c })
+  let jsonStr = jsonMatch[0]
+  // Replace Chinese curly quotes with 「」
+  jsonStr = jsonStr.replaceAll("\u201c", "\u300c")
+  jsonStr = jsonStr.replaceAll("\u201d", "\u300d")
+  jsonStr = jsonStr.replaceAll("\u2018", "\u300e")
+  jsonStr = jsonStr.replaceAll("\u2019", "\u300f")
+  // Remove trailing commas
+  jsonStr = jsonStr.replaceAll(/,(\s*[}\]])/g, "$1")
+
+  try {
+    return JSON.parse(jsonStr) as SubtitleLine[]
+  } catch {
+    // Fallback: line-by-line extraction
+    console.info("[subtitles] JSON.parse failed, using line-by-line extraction")
+    const lines: SubtitleLine[] = []
+    for (const line of jsonStr.split("\n")) {
+      const startMatch = line.match(/"start"\s*:\s*([\d.]+)/)
+      const endMatch = line.match(/"end"\s*:\s*([\d.]+)/)
+      const textMatch = line.match(/"text"\s*:\s*"(.*)"/)
+      if (startMatch && endMatch && textMatch) {
+        let t = textMatch[1]!
+        t = t.replace(/"\s*,\s*"(start|end)"\s*:\s*[\d.]+\s*(?:[,}]+\s*)?$/, "")
+        t = t.replace(/"\s*[}\]]\s*$/, "")
+        t = t.replaceAll('\\"', '"').replaceAll("\\n", "")
+        if (t.length > 0) {
+          lines.push({
+            text: t,
+            start: Number.parseFloat(startMatch[1]!),
+            end: Number.parseFloat(endMatch[1]!),
+          })
+        }
+      }
     }
+    console.info(`[subtitles] Extracted ${lines.length} lines from line-by-line parsing`)
+    return lines
   }
+}
 
-  const dgClean = dgChars.map((d) => d.char)
+/**
+ * Post-process LLM-generated subtitles:
+ * - Remove empty/duplicate lines
+ * - Fix time overlaps
+ * - Ensure monotonically increasing timestamps
+ * - Enforce minimum duration per line
+ */
+function postProcessSubtitles(lines: SubtitleLine[]): SubtitleLine[] {
+  const MIN_DURATION = 0.5
 
-  // LCS alignment: find which original chars match which Deepgram chars
-  const matches = lcsAlign(
-    origClean.map((c) => c.char),
-    dgClean,
+  // Filter out empty lines and ensure valid numbers
+  let result = lines.filter(
+    (line) =>
+      line.text &&
+      line.text.trim().length > 0 &&
+      typeof line.start === "number" &&
+      typeof line.end === "number" &&
+      !Number.isNaN(line.start) &&
+      !Number.isNaN(line.end),
   )
 
-  // Build timestamp map: original char index → Deepgram timestamp
-  const tsMap = new Map<number, { start: number; end: number }>()
-  for (const [origIdx, dgIdx] of matches) {
-    const origCharIdx = origClean[origIdx]!.idx
-    tsMap.set(origCharIdx, { start: dgChars[dgIdx]!.start, end: dgChars[dgIdx]!.end })
-  }
+  // Sort by start time
+  result.sort((a, b) => a.start - b.start)
 
-  // Build result: every original character gets a timestamp
-  // Matched chars use Deepgram timing; unmatched chars are interpolated
-  const result: CharTimestamp[] = []
-  for (const [i, origChar] of origChars.entries()) {
-    const ts = tsMap.get(i)
-    if (ts) {
-      result.push({ char: origChar!, start: ts.start, end: ts.end })
-    } else {
-      // Placeholder — will be interpolated
-      result.push({ char: origChar!, start: -1, end: -1 })
+  // Remove duplicates (same text within 1s)
+  result = result.filter((line, idx) => {
+    if (idx === 0) return true
+    const prev = result[idx - 1]!
+    return !(line.text === prev.text && Math.abs(line.start - prev.start) < 1)
+  })
+
+  // Fix timestamps
+  for (let i = 0; i < result.length; i++) {
+    const line = result[i]!
+
+    // Ensure end > start with minimum duration
+    if (line.end <= line.start) {
+      line.end = line.start + MIN_DURATION
+    }
+    if (line.end - line.start < MIN_DURATION) {
+      line.end = line.start + MIN_DURATION
+    }
+
+    // Fix overlap with next line
+    if (i + 1 < result.length) {
+      const next = result[i + 1]!
+      if (next.start < line.end) {
+        next.start = line.end
+      }
+      if (next.end <= next.start) {
+        next.end = next.start + MIN_DURATION
+      }
     }
   }
 
-  // Interpolate unmatched characters from neighbors
-  interpolateTimestamps(result, segStart, segEnd)
-
+  console.info(`[subtitles] Post-processed ${result.length} subtitle lines`)
   return result
 }
 
-/**
- * LCS-based alignment: returns pairs of [origIdx, dgIdx] for matching chars.
- * Uses space-optimized LCS with backtracking.
- */
-function lcsAlign(a: string[], b: string[]): [number, number][] {
-  const m = a.length
-  const n = b.length
-
-  // For very long sequences, use a greedy approach to avoid O(m*n) memory
-  if (m * n > 500_000) {
-    return greedyAlign(a, b)
-  }
-
-  // Standard LCS DP
-  const dp: number[][] = Array.from({ length: m + 1 }, () => Array.from({ length: n + 1 }, () => 0))
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (a[i - 1] === b[j - 1]) {
-        dp[i]![j] = dp[i - 1]![j - 1]! + 1
-      } else {
-        dp[i]![j] = Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!)
-      }
-    }
-  }
-
-  // Backtrack to find alignment pairs
-  const pairs: [number, number][] = []
-  let i = m
-  let j = n
-  while (i > 0 && j > 0) {
-    if (a[i - 1] === b[j - 1]) {
-      pairs.push([i - 1, j - 1])
-      i--
-      j--
-    } else if (dp[i - 1]![j]! >= dp[i]![j - 1]!) {
-      i--
-    } else {
-      j--
-    }
-  }
-
-  return pairs.reverse()
-}
-
-/**
- * Greedy sequential alignment for large sequences.
- * For each char in a, find the next matching char in b.
- */
-function greedyAlign(a: string[], b: string[]): [number, number][] {
-  const pairs: [number, number][] = []
-  let bStart = 0
-
-  for (const [i, element] of a.entries()) {
-    for (let j = bStart; j < b.length; j++) {
-      if (element === b[j]) {
-        pairs.push([i, j])
-        bStart = j + 1
-        break
-      }
-    }
-  }
-
-  return pairs
-}
-
-/**
- * Fill in timestamps for unmatched characters by interpolating
- * from the nearest matched neighbors.
- *
- * For runs of unmatched chars, distributes them evenly in the gap between
- * surrounding matched chars, with a minimum duration of 0.15s per char
- * (Chinese speech is ~4-6 chars/sec). Then enforces monotonic ordering.
- */
-function interpolateTimestamps(chars: CharTimestamp[], segStart: number, segEnd: number): void {
-  // Mark which chars have real timestamps (matched via LCS)
-  const matched = chars.map((c) => c.start >= 0 && c.end >= 0)
-
-  // Process runs of unmatched chars: distribute evenly with minimum duration
-  let i = 0
-  while (i < chars.length) {
-    if (matched[i]) {
-      i++
-      continue
-    }
-
-    // Find the run of unmatched chars
-    const runStart = i
-    while (i < chars.length && !matched[i]) i++
-    const runEnd = i // exclusive
-
-    // Get bounding timestamps
-    const leftEnd = runStart > 0 ? chars[runStart - 1]!.end : segStart
-    const rightStart = runEnd < chars.length ? chars[runEnd]!.start : segEnd
-    const runLen = runEnd - runStart
-    const gap = rightStart - leftEnd
-
-    // Chinese speech is ~4-6 chars/sec. Enforce minimum 0.15s per char.
-    const minDuration = runLen * 0.15
-    const effectiveGap = Math.max(gap, minDuration)
-
-    // Distribute evenly over the effective gap
-    for (let j = 0; j < runLen; j++) {
-      chars[runStart + j]!.start = leftEnd + (effectiveGap * j) / runLen
-      chars[runStart + j]!.end = leftEnd + (effectiveGap * (j + 1)) / runLen
-    }
-  }
-
-  // Monotonic pass: ensure timestamps never go backward
-  for (let k = 1; k < chars.length; k++) {
-    if (chars[k]!.start < chars[k - 1]!.start) {
-      chars[k]!.start = chars[k - 1]!.start
-    }
-    if (chars[k]!.end < chars[k]!.start) {
-      chars[k]!.end = chars[k]!.start + 0.05
-    }
-    if (chars[k]!.end < chars[k - 1]!.end) {
-      chars[k]!.end = chars[k - 1]!.end
-    }
-  }
-}
-
-/**
- * Split character timestamps into subtitle lines (~12-18 chars),
- * breaking at Chinese punctuation when possible.
- */
-function splitIntoSubtitleLines(chars: CharTimestamp[]): SubtitleLine[] {
-  const MAX_LEN = 18
-  const MIN_LEN = 6
-  const lines: SubtitleLine[] = []
-
-  let lineChars: CharTimestamp[] = []
-
-  for (const c of chars) {
-    lineChars.push(c)
-
-    const text = lineChars.map((lc) => lc.char).join("")
-    const isPunct = /[，。！？、；：]/.test(c.char)
-    const isNewline = c.char === "\n"
-
-    const shouldFlush = isNewline || (isPunct && text.length >= MIN_LEN) || text.length >= MAX_LEN
-
-    if (shouldFlush && lineChars.length > 0) {
-      flushLine(lineChars, lines)
-      lineChars = []
-    }
-  }
-
-  // Flush remaining
-  if (lineChars.length > 0) {
-    flushLine(lineChars, lines)
-  }
-
-  // Post-process: split long lines, enforce min duration, fix overlaps
-  const MAX_LINE_DUR = 6
-  const MIN_LINE_DUR = 0.8
-
-  // Split any lines that are too long
-  const splitLines: SubtitleLine[] = []
-  for (const line of lines) {
-    const dur = line.end - line.start
-    if (dur > MAX_LINE_DUR) {
-      // Split into chunks of ~MAX_LINE_DUR
-      const numParts = Math.ceil(dur / MAX_LINE_DUR)
-      const textChars = [...line.text]
-      const charsPerPart = Math.ceil(textChars.length / numParts)
-      for (let p = 0; p < numParts; p++) {
-        const partChars = textChars.slice(p * charsPerPart, (p + 1) * charsPerPart)
-        const partText = partChars.join("").trim()
-        if (partText.length === 0) continue
-        splitLines.push({
-          text: partText,
-          start: line.start + (dur * p) / numParts,
-          end: line.start + (dur * (p + 1)) / numParts,
-        })
-      }
-    } else {
-      splitLines.push(line)
-    }
-  }
-
-  // Enforce minimum duration and fix overlaps
-  for (let idx = 0; idx < splitLines.length; idx++) {
-    const line = splitLines[idx]!
-    if (line.end - line.start < MIN_LINE_DUR) {
-      line.end = line.start + MIN_LINE_DUR
-    }
-    if (idx + 1 < splitLines.length && splitLines[idx + 1]!.start < line.end) {
-      splitLines[idx + 1]!.start = line.end
-      if (splitLines[idx + 1]!.end <= splitLines[idx + 1]!.start) {
-        splitLines[idx + 1]!.end = splitLines[idx + 1]!.start + MIN_LINE_DUR
-      }
-    }
-  }
-
-  return splitLines
-}
-
-function flushLine(lineChars: CharTimestamp[], lines: SubtitleLine[]): void {
-  const text = lineChars
-    .map((c) => c.char)
-    .join("")
-    .trim()
-  if (text.length === 0) return
-
-  lines.push({
-    text,
-    start: lineChars[0]!.start,
-    end: lineChars.at(-1)!.end,
-  })
-}
-
-function runClaude(prompt: string): Promise<string> {
+function runClaude(prompt: string, extraArgs?: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const home = os.homedir()
 
@@ -755,7 +638,8 @@ function runClaude(prompt: string): Promise<string> {
 
     console.info("[scene-generator] Running Claude CLI...")
 
-    const proc = spawn("claude", ["-p"], {
+    const args = ["-p", ...(extraArgs || [])]
+    const proc = spawn("claude", args, {
       stdio: ["pipe", "pipe", "pipe"],
       env,
     })

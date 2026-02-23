@@ -16,7 +16,11 @@ import {
 import { generateEmailHtml, generateHtmlPage } from "./html-generator"
 import { fetchOGImages } from "./og-image"
 import { loadPreferences } from "./preferences"
-import { alignTranscriptWithScript, generateScenes } from "./scene-generator"
+import {
+  alignTranscriptWithScript,
+  generateScenes,
+  generateSubtitlesWithLLM,
+} from "./scene-generator"
 import { generateAudioToFile } from "./tts"
 import { downloadOGImages, renderThumbnail, renderVideo } from "./video-render"
 import { buildVideoDescription, refreshAccessToken, setThumbnail, uploadVideo } from "./youtube"
@@ -252,6 +256,14 @@ export async function runPipeline(callbacks: PipelineCallbacks): Promise<void> {
         (status) => callbacks.onStatus(status),
         deepgramResult.words,
       )
+
+      // Generate subtitles using LLM
+      callbacks.onStatus("Generating subtitles with LLM...")
+      const subtitles = await generateSubtitlesWithLLM(alignedSegments, deepgramResult.words, (s) =>
+        callbacks.onStatus(s),
+      )
+      scenes.subtitles = subtitles
+      console.info(`[pipeline] Generated ${subtitles.length} subtitle lines`)
 
       // Fetch OG images for news scenes
       callbacks.onStatus("Fetching news images...")
