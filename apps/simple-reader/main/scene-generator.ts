@@ -35,6 +35,7 @@ export interface ScenesJson {
   fps: number
   scenes: Scene[]
   thumbnailTitle?: string
+  youtubeTitle?: string
 }
 
 /**
@@ -244,6 +245,7 @@ Given aligned audio segments (with timestamps) and the original news report, gen
 6. Group consecutive segments that discuss the same news topic into one scene
 7. IMPORTANT: In all JSON string values, use 「」 instead of "" or \u201c\u201d for Chinese quotes. Never use Unicode curly quotes.
 8. Generate a "thumbnailTitle" field: a short, eye-catching Chinese headline (8-15 characters) for the YouTube thumbnail. Pick the most dramatic or intriguing angle from today's news. Make it punchy and curiosity-driven, like a tabloid headline. Examples: "AI一夜干掉程序员？", "你的密码已经不安全了", "GPT-5来了 世界变了"
+9. Generate a "youtubeTitle" field: a compelling Chinese YouTube title (30-60 characters) that drives clicks. Format: "<引人好奇的问题或惊人事实>丨每日AI快送". Use specific numbers, provocative questions, or dramatic statements from the news. Examples: "程序员不理解自己写的代码了？AI编程的「认知债务」正在爆发丨每日AI快送", "AI用15分钟黑掉了你的服务器丨纳斯达克暴跌5000亿丨每日AI快送"
 
 ## Input
 
@@ -265,6 +267,7 @@ Return ONLY valid JSON matching this structure (no markdown fences):
   "audioDuration": ${audioDuration},
   "fps": 30,
   "thumbnailTitle": "<eye-catching 8-15 char Chinese headline>",
+  "youtubeTitle": "<compelling 30-60 char Chinese YouTube title ending with 丨每日AI快送>",
   "scenes": [
     { "type": "intro", "start": 0, "end": 5 },
     { "type": "overview", "start": 5, "end": <number>, "headlines": [...] },

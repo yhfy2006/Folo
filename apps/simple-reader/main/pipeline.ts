@@ -314,7 +314,7 @@ export async function runPipeline(callbacks: PipelineCallbacks): Promise<void> {
           const videoId = await uploadVideo({
             accessToken,
             videoPath: outputVideoPath,
-            title: `YOMOO 每日AI快送 — ${date}`,
+            title: scenes.youtubeTitle || `YOMOO 每日AI快送 — ${date}`,
             description,
             tags: ["AI", "每日AI快送", "YOMOO", "科技新闻", "AI新闻"],
             categoryId: "28",

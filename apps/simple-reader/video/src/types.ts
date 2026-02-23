@@ -51,4 +51,5 @@ export interface ScenesData {
   scenes: Scene[]
   subtitles?: SubtitleLine[]
   thumbnailTitle?: string
+  youtubeTitle?: string
 }
