@@ -16,6 +16,11 @@ export interface UserPreferences {
   pipelineSchedule: string // HH:mm format, empty = disabled
   workerUrl: string
   workerSecret: string
+  deepgramApiKey: string
+  youtubeClientId: string
+  youtubeClientSecret: string
+  youtubeRefreshToken: string
+  youtubeEnabled: boolean
 }
 
 const DEFAULT_PREFERENCES: UserPreferences = {
@@ -31,6 +36,11 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   pipelineSchedule: "",
   workerUrl: "",
   workerSecret: "",
+  deepgramApiKey: "",
+  youtubeClientId: "",
+  youtubeClientSecret: "",
+  youtubeRefreshToken: "",
+  youtubeEnabled: false,
 }
 
 function getPreferencesPath(): string {

@@ -110,10 +110,17 @@ const api = {
     return () => ipcRenderer.removeListener("pipeline-progress", handler)
   },
   onPipelineDone: (
-    callback: (result: { pageUrl: string; audioUrl: string; date: string }) => void,
+    callback: (result: {
+      pageUrl: string
+      audioUrl: string
+      date: string
+      youtubeUrl?: string
+    }) => void,
   ) => {
-    const handler = (_event: any, result: { pageUrl: string; audioUrl: string; date: string }) =>
-      callback(result)
+    const handler = (
+      _event: any,
+      result: { pageUrl: string; audioUrl: string; date: string; youtubeUrl?: string },
+    ) => callback(result)
     ipcRenderer.on("pipeline-done", handler)
     return () => ipcRenderer.removeListener("pipeline-done", handler)
   },
@@ -129,6 +136,11 @@ const api = {
 
   // Scheduler
   getSchedulerStatus: () => ipcRenderer.invoke("get-scheduler-status"),
+
+  // YouTube
+  youtubeGetAuthUrl: () => ipcRenderer.invoke("youtube-get-auth-url"),
+  youtubeExchangeCode: (code: string) => ipcRenderer.invoke("youtube-exchange-code", code),
+  youtubeCheckConnection: () => ipcRenderer.invoke("youtube-check-connection"),
 }
 
 contextBridge.exposeInMainWorld("api", api)

@@ -523,7 +523,7 @@ function PipelineView({
   status,
   logs,
   step: _step,
-  total: _total,
+  total,
   error,
   errorStage,
   result,
@@ -537,7 +537,7 @@ function PipelineView({
   total: number
   error: string | null
   errorStage: string | null
-  result: { pageUrl: string; audioUrl: string; date: string } | null
+  result: { pageUrl: string; audioUrl: string; date: string; youtubeUrl?: string } | null
   onReset: () => void
 }) {
   const logEndRef = useRef<HTMLDivElement>(null)
@@ -546,7 +546,9 @@ function PipelineView({
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [logs])
-  const stages = [
+
+  // Dynamic stages based on total step count from pipeline
+  const baseStages = [
     { key: "verify", label: "Verify" },
     { key: "report", label: "Report" },
     { key: "podcast", label: "Podcast" },
@@ -554,6 +556,17 @@ function PipelineView({
     { key: "upload", label: "Upload" },
     { key: "publish", label: "Publish" },
   ]
+
+  const videoStage = { key: "video", label: "Video" }
+  const youtubeStage = { key: "youtube", label: "YouTube" }
+
+  const stages = React.useMemo(() => {
+    const s = [...baseStages]
+    // total > 6 means video is enabled; total > 7 means youtube is also enabled
+    if (total > 6) s.push(videoStage)
+    if (total > 7) s.push(youtubeStage)
+    return s
+  }, [total])
 
   const currentIdx = stages.findIndex((s) => s.key === stage)
 
@@ -697,6 +710,16 @@ function PipelineView({
             >
               Download Audio
             </a>
+            {result.youtubeUrl && (
+              <a
+                href={result.youtubeUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 rounded-lg border border-red-500 px-4 py-2.5 text-sm font-medium text-red-500 hover:bg-red-500/10"
+              >
+                YouTube Video
+              </a>
+            )}
           </div>
 
           <p className="mt-4 text-center text-[10px] text-[hsl(var(--muted-foreground))]">
@@ -872,6 +895,11 @@ function PreferencesDialog({ onClose }: { onClose: () => void }) {
     pipelineSchedule: "",
     workerUrl: "",
     workerSecret: "",
+    deepgramApiKey: "",
+    youtubeClientId: "",
+    youtubeClientSecret: "",
+    youtubeRefreshToken: "",
+    youtubeEnabled: false,
   })
   const [newInterest, setNewInterest] = React.useState("")
   const [loaded, setLoaded] = React.useState(false)
@@ -1185,6 +1213,86 @@ function PreferencesDialog({ onClose }: { onClose: () => void }) {
         {/* Subscriber Management */}
         {prefs.workerUrl && prefs.workerSecret && <SubscriberManager />}
 
+        {/* Divider */}
+        <hr className="my-4 border-[hsl(var(--border))]" />
+
+        <h4 className="mb-3 text-xs font-semibold" style={{ color: "#FF6B35" }}>
+          Video Generation (Deepgram)
+        </h4>
+
+        {/* Deepgram API Key */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs text-[hsl(var(--muted-foreground))]">
+            Deepgram API Key
+          </label>
+          <input
+            type="password"
+            value={prefs.deepgramApiKey || ""}
+            onChange={(e) => setPrefs({ ...prefs, deepgramApiKey: e.target.value })}
+            placeholder="Enter your Deepgram API key..."
+            className="w-full rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1.5 text-xs outline-none focus:border-[color:var(--accent-color)]"
+          />
+          <p className="mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
+            Required for video generation. Get your key from console.deepgram.com
+          </p>
+        </div>
+
+        {/* Divider */}
+        <hr className="my-4 border-[hsl(var(--border))]" />
+
+        <h4 className="mb-3 text-xs font-semibold" style={{ color: "#FF6B35" }}>
+          YouTube Upload
+        </h4>
+
+        {/* YouTube Client ID */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs text-[hsl(var(--muted-foreground))]">
+            YouTube Client ID
+          </label>
+          <input
+            type="text"
+            value={prefs.youtubeClientId || ""}
+            onChange={(e) => setPrefs({ ...prefs, youtubeClientId: e.target.value })}
+            placeholder="Google OAuth Client ID"
+            className="w-full rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1.5 text-xs outline-none focus:border-[color:var(--accent-color)]"
+          />
+        </div>
+
+        {/* YouTube Client Secret */}
+        <div className="mb-4">
+          <label className="mb-1 block text-xs text-[hsl(var(--muted-foreground))]">
+            YouTube Client Secret
+          </label>
+          <input
+            type="password"
+            value={prefs.youtubeClientSecret || ""}
+            onChange={(e) => setPrefs({ ...prefs, youtubeClientSecret: e.target.value })}
+            placeholder="Google OAuth Client Secret"
+            className="w-full rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1.5 text-xs outline-none focus:border-[color:var(--accent-color)]"
+          />
+        </div>
+
+        {/* YouTube Connection */}
+        <div className="mb-4">
+          <YouTubeConnectionManager prefs={prefs} setPrefs={setPrefs} />
+        </div>
+
+        {/* YouTube Enable Toggle */}
+        <div className="mb-4">
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={prefs.youtubeEnabled || false}
+              onChange={(e) => setPrefs({ ...prefs, youtubeEnabled: e.target.checked })}
+              className="accent-[color:var(--accent-color)]"
+            />
+            Enable YouTube upload after video generation
+          </label>
+          <p className="ml-5 mt-0.5 text-[10px] text-[hsl(var(--muted-foreground))]">
+            Requires Deepgram API key and YouTube connection
+          </p>
+        </div>
+
         {/* Actions */}
         <div className="flex justify-end gap-2">
           <button
@@ -1201,6 +1309,133 @@ function PreferencesDialog({ onClose }: { onClose: () => void }) {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function YouTubeConnectionManager({
+  prefs,
+  setPrefs,
+}: {
+  prefs: { youtubeClientId: string; youtubeClientSecret: string; youtubeRefreshToken: string }
+  setPrefs: (prefs: any) => void
+}) {
+  const [connected, setConnected] = React.useState<boolean | null>(null)
+  const [checking, setChecking] = React.useState(false)
+  const [connecting, setConnecting] = React.useState(false)
+  const [error, setError] = React.useState("")
+
+  // Check connection status on mount
+  React.useEffect(() => {
+    if (prefs.youtubeRefreshToken) {
+      checkConnection()
+    } else {
+      setConnected(false)
+    }
+  }, [prefs.youtubeRefreshToken])
+
+  const checkConnection = async () => {
+    setChecking(true)
+    setError("")
+    try {
+      const result = await window.api.youtubeCheckConnection()
+      setConnected(result.connected)
+      if (!result.connected && result.error) {
+        setError(result.error)
+      }
+    } catch (err) {
+      setConnected(false)
+      setError(String(err))
+    }
+    setChecking(false)
+  }
+
+  const handleConnect = async () => {
+    if (!prefs.youtubeClientId || !prefs.youtubeClientSecret) {
+      setError("Please enter Client ID and Client Secret first")
+      return
+    }
+
+    setConnecting(true)
+    setError("")
+
+    try {
+      // Get OAuth URL
+      const urlResult = await window.api.youtubeGetAuthUrl()
+      if (!urlResult.success) {
+        setError(urlResult.error || "Failed to get auth URL")
+        setConnecting(false)
+        return
+      }
+
+      // Open in browser
+      window.open(urlResult.url, "_blank")
+
+      // Prompt for code
+      const code = window.prompt(
+        "After authorizing in your browser, paste the authorization code here:",
+      )
+
+      if (!code) {
+        setConnecting(false)
+        return
+      }
+
+      // Exchange code
+      const exchangeResult = await window.api.youtubeExchangeCode(code.trim())
+      if (exchangeResult.success) {
+        // Reload prefs to get the saved refresh token
+        const updatedPrefs = await window.api.getPreferences()
+        setPrefs(updatedPrefs)
+        setConnected(true)
+        console.info("[youtube-ui] Connected successfully")
+      } else {
+        setError(exchangeResult.error || "Failed to exchange code")
+      }
+    } catch (err) {
+      setError(String(err))
+    }
+    setConnecting(false)
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div
+            className={`size-2 rounded-full ${
+              connected === null
+                ? "bg-[hsl(var(--border))]"
+                : connected
+                  ? "bg-green-500"
+                  : "bg-red-500"
+            }`}
+          />
+          <span className="text-xs">
+            {checking ? "Checking..." : connected ? "Connected" : "Not connected"}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          {connected && (
+            <button
+              onClick={checkConnection}
+              disabled={checking}
+              className="text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[color:var(--accent-color)]"
+            >
+              {checking ? "..." : "Re-check"}
+            </button>
+          )}
+          <button
+            onClick={handleConnect}
+            disabled={connecting || !prefs.youtubeClientId || !prefs.youtubeClientSecret}
+            className="rounded border px-2 py-1 text-xs hover:bg-[hsl(var(--muted))] disabled:opacity-50"
+            style={{ borderColor: "#FF6B35", color: "#FF6B35" }}
+          >
+            {connecting ? "Connecting..." : connected ? "Reconnect" : "Connect YouTube"}
+          </button>
+        </div>
+      </div>
+      {error && <p className="mt-1 text-[10px] text-red-500">{error}</p>}
     </div>
   )
 }

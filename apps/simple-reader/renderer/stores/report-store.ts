@@ -34,7 +34,7 @@ interface ReportState {
   pipelineTotal: number
   pipelineError: string | null
   pipelineErrorStage: string | null
-  pipelineResult: { pageUrl: string; audioUrl: string; date: string } | null
+  pipelineResult: { pageUrl: string; audioUrl: string; date: string; youtubeUrl?: string } | null
 
   setShowReport: (show: boolean) => void
   setGenerating: (generating: boolean) => void
@@ -243,7 +243,7 @@ export const useReportStore = create<ReportState>((set, get) => ({
     })
 
     const removeDoneListener = window.api.onPipelineDone(
-      (result: { pageUrl: string; audioUrl: string; date: string }) => {
+      (result: { pageUrl: string; audioUrl: string; date: string; youtubeUrl?: string }) => {
         set((state) => ({
           pipelineResult: result,
           pipelineLogs: [...state.pipelineLogs, `${formatLogTime()} ✓ Pipeline complete!`],

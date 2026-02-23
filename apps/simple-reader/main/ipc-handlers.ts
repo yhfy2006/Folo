@@ -345,6 +345,61 @@ export function registerIpcHandlers() {
     fs.writeFileSync(result.filePath, content, "utf-8")
     return { success: true }
   })
+
+  // --- YouTube ---
+
+  ipcMain.handle("youtube-get-auth-url", async () => {
+    const prefs = loadPreferences()
+    if (!prefs.youtubeClientId) {
+      return { success: false, error: "YouTube Client ID not configured" }
+    }
+    const { getAuthUrl } = await import("./youtube")
+    const url = getAuthUrl(prefs.youtubeClientId, "urn:ietf:wg:oauth:2.0:oob")
+    return { success: true, url }
+  })
+
+  ipcMain.handle("youtube-exchange-code", async (_event, code: string) => {
+    const prefs = loadPreferences()
+    if (!prefs.youtubeClientId || !prefs.youtubeClientSecret) {
+      return { success: false, error: "YouTube Client ID/Secret not configured" }
+    }
+    try {
+      const { exchangeCode } = await import("./youtube")
+      const tokens = await exchangeCode(
+        code,
+        prefs.youtubeClientId,
+        prefs.youtubeClientSecret,
+        "urn:ietf:wg:oauth:2.0:oob",
+      )
+      // Save refresh token to preferences
+      prefs.youtubeRefreshToken = tokens.refreshToken
+      savePrefs(prefs)
+      console.info("[youtube] OAuth tokens exchanged and saved")
+      return { success: true }
+    } catch (err) {
+      console.error("[youtube] Exchange code failed:", err)
+      return { success: false, error: String(err) }
+    }
+  })
+
+  ipcMain.handle("youtube-check-connection", async () => {
+    const prefs = loadPreferences()
+    if (!prefs.youtubeRefreshToken || !prefs.youtubeClientId || !prefs.youtubeClientSecret) {
+      return { success: false, connected: false, error: "YouTube not configured" }
+    }
+    try {
+      const { refreshAccessToken } = await import("./youtube")
+      await refreshAccessToken(
+        prefs.youtubeRefreshToken,
+        prefs.youtubeClientId,
+        prefs.youtubeClientSecret,
+      )
+      return { success: true, connected: true }
+    } catch (err) {
+      console.error("[youtube] Connection check failed:", err)
+      return { success: false, connected: false, error: String(err) }
+    }
+  })
 }
 
 function generateId(): string {
