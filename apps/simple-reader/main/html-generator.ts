@@ -9,7 +9,18 @@ export function generateHtmlPage(
   audioUrl: string | null,
   date: string,
   podcastScript?: string | null,
+  seoDescription?: string,
 ): string {
+  const description =
+    seoDescription ||
+    reportMarkdown
+      .replaceAll(/[#*\n\r]/g, " ")
+      .replaceAll(/\s+/g, " ")
+      .trim()
+      .slice(0, 150)
+  const pageTitle = `YOMOO 每日AI快送 — ${escapeHtml(date)}`
+  const pageUrl = `https://daily.yomoo.net/episodes/${encodeURIComponent(date)}/index.html`
+
   const renderedReport = marked.parse(reportMarkdown, { async: false, breaks: true }) as string
   const renderedPodcast = podcastScript
     ? (marked.parse(podcastScript, { async: false, breaks: true }) as string)
@@ -42,7 +53,53 @@ export function generateHtmlPage(
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#1a1410" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#fffbf5" media="(prefers-color-scheme: light)">
-  <title>YOMOO 每日AI快送 — ${escapeHtml(date)}</title>
+  <title>${pageTitle}</title>
+  <meta name="description" content="${escapeHtml(description)}">
+  <link rel="canonical" href="${pageUrl}">
+  <!-- Open Graph -->
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="${pageTitle}">
+  <meta property="og:description" content="${escapeHtml(description)}">
+  <meta property="og:url" content="${pageUrl}">
+  <meta property="og:site_name" content="YOMOO 每日AI快送">
+  <meta property="og:locale" content="zh_CN">
+  <meta property="article:published_time" content="${date}T08:00:00+08:00">
+  <meta property="article:tag" content="AI">
+  <meta property="article:tag" content="科技新闻">
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="${pageTitle}">
+  <meta name="twitter:description" content="${escapeHtml(description)}">
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "NewsArticle",
+    "headline": "${pageTitle}",
+    "description": ${JSON.stringify(description)},
+    "datePublished": "${date}T08:00:00+08:00",
+    "dateModified": "${date}T08:00:00+08:00",
+    "author": {
+      "@type": "Organization",
+      "name": "YOMOO"
+    },
+    "publisher": {
+      "@type": "Organization",
+      "name": "YOMOO",
+      "url": "https://daily.yomoo.net"
+    },
+    "mainEntityOfPage": "${pageUrl}"${
+      audioUrl
+        ? `,
+    "audio": {
+      "@type": "AudioObject",
+      "contentUrl": "${audioUrl}",
+      "encodingFormat": "audio/mpeg"
+    }`
+        : ""
+    }
+  }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=Noto+Serif+SC:wght@600;700;900&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet">

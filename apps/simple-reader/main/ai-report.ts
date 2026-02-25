@@ -294,7 +294,7 @@ function getLanguageInstruction(lang: string): string {
   return langMap[lang] || `Language: ${lang}`
 }
 
-function runClaude(prompt: string): Promise<string> {
+export function runClaude(prompt: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const claudePath = getClaudePath()
     const workspacePath = getWorkspacePath()
@@ -537,6 +537,19 @@ export async function generatePodcastScriptToString(
       (error) => reject(new Error(error)),
     ).catch(reject)
   })
+}
+
+/**
+ * Generate a one-sentence SEO description from a report using Claude CLI.
+ * Returns a Chinese summary (80-150 chars) suitable for meta description and OG tags.
+ */
+export async function generateSeoDescription(reportContent: string): Promise<string> {
+  const prompt = `从以下AI新闻报告中提取一句话摘要（中文，80-150字），用于网页meta description。
+概括当天最重要的2-3个新闻主题，吸引点击。不要用"本文"、"本期"等开头。直接描述内容。
+只输出摘要文本，不要其他内容。
+
+${reportContent.slice(0, 3000)}`
+  return (await runClaude(prompt)).trim()
 }
 
 function stripHtml(html: string): string {

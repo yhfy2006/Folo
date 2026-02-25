@@ -1,17 +1,20 @@
 import { spawn } from "node:child_process"
 import fs from "node:fs"
 import { pipeline } from "node:stream/promises"
-import { fileURLToPath } from "node:url"
 
+import { app } from "electron"
 import path from "pathe"
 
 import type { ScenesJson } from "./scene-generator"
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+// Use app.getAppPath() to get the source root (not the compiled dist/ dir)
+function getVideoProjectDir(): string {
+  return path.resolve(app.getAppPath(), "video")
+}
 
-// Resolve the Remotion project entry point relative to this file
-const VIDEO_ENTRY_POINT = path.resolve(__dirname, "..", "video", "src", "index.ts")
+function getVideoEntryPoint(): string {
+  return path.resolve(getVideoProjectDir(), "src", "index.ts")
+}
 
 interface RenderOptions {
   onProgress?: (pct: number) => void
@@ -28,8 +31,7 @@ export async function downloadOGImages(
   scenesJsonPath: string,
   onStatus?: (status: string) => void,
 ): Promise<void> {
-  const videoProjectDir = path.resolve(__dirname, "..", "video")
-  const imagesDir = path.resolve(videoProjectDir, "public", "images")
+  const imagesDir = path.resolve(getVideoProjectDir(), "public", "images")
   fs.mkdirSync(imagesDir, { recursive: true })
 
   const newsScenes = scenes.scenes.filter((s) => s.type === "news" && s.ogImage)
@@ -96,7 +98,7 @@ export function renderVideo(
     onStatus?.("Starting video render...")
 
     // Copy audio to Remotion's public/ dir so staticFile() can find it
-    const videoProjectDir = path.resolve(__dirname, "..", "video")
+    const videoProjectDir = getVideoProjectDir()
     const publicDir = path.resolve(videoProjectDir, "public")
     fs.mkdirSync(publicDir, { recursive: true })
     const publicAudioPath = path.resolve(publicDir, "podcast.mp3")
@@ -106,7 +108,7 @@ export function renderVideo(
     const args = [
       "remotion",
       "render",
-      VIDEO_ENTRY_POINT,
+      getVideoEntryPoint(),
       "DailyReport",
       "--output",
       outputPath,
@@ -118,10 +120,11 @@ export function renderVideo(
       "30",
     ]
 
-    console.info("[video-render] Spawning:", "npx", args.join(" "))
+    console.info("[video-render] Spawning:", "npx", args.join(" "), "in", videoProjectDir)
 
     const proc = spawn("npx", args, {
       stdio: ["pipe", "pipe", "pipe"],
+      cwd: videoProjectDir,
     })
 
     let stderr = ""
@@ -178,7 +181,7 @@ export function renderThumbnail(
     const args = [
       "remotion",
       "still",
-      VIDEO_ENTRY_POINT,
+      getVideoEntryPoint(),
       "Thumbnail",
       "--output",
       outputPath,
@@ -190,10 +193,12 @@ export function renderThumbnail(
       "720",
     ]
 
-    console.info("[video-render] Spawning thumbnail:", "npx", args.join(" "))
+    const videoProjectDir = getVideoProjectDir()
+    console.info("[video-render] Spawning thumbnail:", "npx", args.join(" "), "in", videoProjectDir)
 
     const proc = spawn("npx", args, {
       stdio: ["pipe", "pipe", "pipe"],
+      cwd: videoProjectDir,
     })
 
     let stderr = ""

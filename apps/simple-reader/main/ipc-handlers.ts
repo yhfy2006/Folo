@@ -286,6 +286,46 @@ export function registerIpcHandlers() {
     }
   })
 
+  // --- YOMOO Video-Only Pipeline ---
+  ipcMain.handle("run-yomoo-video-only", async (event) => {
+    console.info("[ipc] run-yomoo-video-only called")
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return { success: false, error: "No window found" }
+
+    try {
+      const { runVideoOnly } = await import("./pipeline")
+      console.info("[ipc] pipeline (video-only) module loaded successfully")
+
+      await runVideoOnly({
+        onStage: (stage) => {
+          console.info("[pipeline-video] stage:", stage)
+          win.webContents.send("pipeline-stage", stage)
+        },
+        onStatus: (status) => {
+          console.info("[pipeline-video] status:", status)
+          win.webContents.send("pipeline-status", status)
+        },
+        onProgress: (step, total) => {
+          console.info("[pipeline-video] progress:", step, "/", total)
+          win.webContents.send("pipeline-progress", step, total)
+        },
+        onDone: (result) => {
+          console.info("[pipeline-video] done:", result)
+          win.webContents.send("pipeline-done", result)
+        },
+        onError: (stage, error) => {
+          console.error("[pipeline-video] error at", stage, ":", error)
+          win.webContents.send("pipeline-error", stage, error)
+        },
+      })
+      return { success: true }
+    } catch (err) {
+      console.error("[ipc] run-yomoo-video-only error:", err)
+      win.webContents.send("pipeline-error", "init", String(err))
+      return { success: false, error: String(err) }
+    }
+  })
+
   // --- Subscriber Management ---
   ipcMain.handle("list-subscribers", async () => {
     const prefs = loadPreferences()

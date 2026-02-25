@@ -94,6 +94,7 @@ const api = {
 
   // YOMOO Pipeline
   runYomooPipeline: () => ipcRenderer.invoke("run-yomoo-pipeline"),
+  runVideoOnly: () => ipcRenderer.invoke("run-yomoo-video-only"),
   onPipelineStage: (callback: (stage: string) => void) => {
     const handler = (_event: any, stage: string) => callback(stage)
     ipcRenderer.on("pipeline-stage", handler)

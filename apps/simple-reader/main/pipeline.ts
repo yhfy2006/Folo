@@ -3,14 +3,21 @@ import os from "node:os"
 
 import path from "pathe"
 
-import { generatePodcastScriptToString, generateReportToString } from "./ai-report"
+import {
+  generatePodcastScriptToString,
+  generateReportToString,
+  generateSeoDescription,
+} from "./ai-report"
+import { queryOne } from "./database"
 import { transcribeAudio } from "./deepgram"
 import {
   commitFile,
   createReleaseWithAudio,
   ensureRepo,
+  ensureRobotsTxt,
   getGitHubPagesUrl,
   updateRootIndex,
+  updateSitemap,
   verifyToken,
 } from "./github"
 import { generateEmailHtml, generateHtmlPage } from "./html-generator"
@@ -117,6 +124,19 @@ export async function runPipeline(callbacks: PipelineCallbacks): Promise<void> {
     return
   }
 
+  // Generate SEO description (non-blocking, fallback to plain text extract)
+  callbacks.onStatus("Generating SEO description...")
+  let seoDescription: string
+  try {
+    seoDescription = await generateSeoDescription(reportContent)
+  } catch {
+    seoDescription = reportContent
+      .replaceAll(/[#*\n]/g, " ")
+      .replaceAll(/\s+/g, " ")
+      .trim()
+      .slice(0, 150)
+  }
+
   // Stage 2: Generate Podcast Script
   step++
   callbacks.onStage("podcast")
@@ -187,7 +207,7 @@ export async function runPipeline(callbacks: PipelineCallbacks): Promise<void> {
   callbacks.onStatus("Publishing branded page...")
 
   try {
-    const html = generateHtmlPage(reportContent, audioUrl, date, podcastScript)
+    const html = generateHtmlPage(reportContent, audioUrl, date, podcastScript, seoDescription)
     const htmlBase64 = Buffer.from(html).toString("base64")
 
     await commitFile(
@@ -215,6 +235,11 @@ export async function runPipeline(callbacks: PipelineCallbacks): Promise<void> {
       emailBase64,
       `feat: add email version for ${date}`,
     )
+
+    // Update sitemap and ensure robots.txt
+    callbacks.onStatus("Updating sitemap and robots.txt...")
+    await updateSitemap(prefs.githubToken, owner, date)
+    await ensureRobotsTxt(prefs.githubToken, owner)
   } catch (err) {
     callbacks.onError("publish", `Publishing failed: ${err}`)
     return
@@ -358,6 +383,196 @@ export async function runPipeline(callbacks: PipelineCallbacks): Promise<void> {
       console.info("[pipeline] Video generation failed (non-fatal):", err)
       callbacks.onStatus(`Video generation skipped: ${err}`)
     }
+  }
+
+  callbacks.onProgress(total, total)
+  callbacks.onDone({ pageUrl, audioUrl, date, youtubeUrl })
+}
+
+/**
+ * Run only the video generation + YouTube upload stages,
+ * reusing today's existing report, podcast script, and audio file.
+ */
+export async function runVideoOnly(callbacks: PipelineCallbacks): Promise<void> {
+  const prefs = loadPreferences()
+  const date = new Date().toISOString().slice(0, 10)
+
+  const total = 3 // video, youtube, done
+  let step = 0
+
+  // Validate required config
+  if (!prefs.deepgramApiKey) {
+    callbacks.onError("video", "Deepgram API Key not configured.")
+    return
+  }
+
+  // Load report and podcast script from database
+  callbacks.onStage("video")
+  callbacks.onProgress(step, total)
+  callbacks.onStatus("Loading today's report and podcast script...")
+
+  const report = queryOne<{ content: string }>(
+    "SELECT content FROM reports WHERE type = 'report' AND title LIKE ? ORDER BY created_at DESC LIMIT 1",
+    [`%${date}%`],
+  )
+  const podcast = queryOne<{ content: string }>(
+    "SELECT content FROM reports WHERE type = 'podcast' AND title LIKE ? ORDER BY created_at DESC LIMIT 1",
+    [`%${date}%`],
+  )
+
+  if (!report?.content) {
+    callbacks.onError("video", `No report found for ${date}. Run full pipeline first.`)
+    return
+  }
+  if (!podcast?.content) {
+    callbacks.onError("video", `No podcast script found for ${date}. Run full pipeline first.`)
+    return
+  }
+
+  const reportContent = report.content
+  const podcastScript = podcast.content
+
+  // Find today's audio file (most recent mp3)
+  const audioDir = path.join(
+    process.env.HOME || os.homedir(),
+    "Library",
+    "Application Support",
+    "simple-reader",
+    "audio",
+  )
+  const audioFiles = fs.existsSync(audioDir)
+    ? fs
+        .readdirSync(audioDir)
+        .filter((f) => f.endsWith(".mp3"))
+        .sort()
+        .reverse()
+    : []
+
+  if (audioFiles.length === 0) {
+    callbacks.onError("video", "No audio file found. Run full pipeline first.")
+    return
+  }
+
+  const audioFilePath = path.join(audioDir, audioFiles[0]!)
+  callbacks.onStatus(`Using audio: ${audioFiles[0]}`)
+
+  // Derive URLs from today's date
+  const owner = prefs.githubOwner || "YOMOO-LLC"
+  const pageUrl = getGitHubPagesUrl(owner, date)
+  const audioUrl = `https://github.com/${owner}/yomoo-daily/releases/download/v${date}/yomoo-${date}.mp3`
+
+  let youtubeUrl: string | undefined
+
+  // Stage 1: Deepgram + Scene Generation + Video Render
+  step++
+  callbacks.onProgress(step, total)
+  callbacks.onStatus("Transcribing audio with Deepgram...")
+
+  try {
+    const deepgramResult = await transcribeAudio(audioFilePath, prefs.deepgramApiKey, {
+      onStatus: (status) => callbacks.onStatus(status),
+    })
+
+    callbacks.onStatus("Aligning transcript with script...")
+    const alignedSegments = alignTranscriptWithScript(deepgramResult.words, podcastScript)
+
+    let audioDuration = 0
+    if (deepgramResult.words.length > 0) {
+      audioDuration = deepgramResult.words.at(-1)!.end
+    }
+
+    const scenes = await generateScenes(
+      alignedSegments,
+      reportContent,
+      audioDuration,
+      (status) => callbacks.onStatus(status),
+      deepgramResult.words,
+    )
+
+    callbacks.onStatus("Generating subtitles with LLM...")
+    const subtitles = await generateSubtitlesWithLLM(alignedSegments, deepgramResult.words, (s) =>
+      callbacks.onStatus(s),
+    )
+    scenes.subtitles = subtitles
+    console.info(`[pipeline-video] Generated ${subtitles.length} subtitle lines`)
+
+    callbacks.onStatus("Fetching news images...")
+    await fetchOGImages(scenes, (s) => callbacks.onStatus(s))
+
+    const tmpDir = path.join(os.tmpdir(), `yomoo-video-${date}`)
+    if (!fs.existsSync(tmpDir)) {
+      fs.mkdirSync(tmpDir, { recursive: true })
+    }
+    const scenesJsonPath = path.join(tmpDir, "scenes.json")
+    fs.writeFileSync(scenesJsonPath, JSON.stringify(scenes, null, 2), "utf-8")
+    callbacks.onStatus(`Scene generation complete: ${scenes.scenes.length} scenes`)
+
+    await downloadOGImages(scenes, scenesJsonPath, (s) => callbacks.onStatus(s))
+
+    callbacks.onStatus("Rendering video...")
+    const outputVideoPath = path.join(tmpDir, "video.mp4")
+    const thumbnailOutputPath = path.join(tmpDir, "thumbnail.png")
+
+    await renderVideo(scenesJsonPath, audioFilePath, outputVideoPath, {
+      onProgress: (pct) => callbacks.onStatus(`Rendering video: ${pct}%`),
+      onStatus: (status) => callbacks.onStatus(status),
+    })
+
+    await renderThumbnail(scenesJsonPath, thumbnailOutputPath, {
+      onStatus: (status) => callbacks.onStatus(status),
+    })
+
+    console.info("[pipeline-video] Video rendered:", outputVideoPath)
+
+    // Stage 2: YouTube Upload
+    if (prefs.youtubeEnabled && prefs.youtubeRefreshToken) {
+      step++
+      callbacks.onStage("youtube")
+      callbacks.onProgress(step, total)
+      callbacks.onStatus("Uploading to YouTube...")
+
+      try {
+        const accessToken = await refreshAccessToken(
+          prefs.youtubeRefreshToken,
+          prefs.youtubeClientId,
+          prefs.youtubeClientSecret,
+        )
+
+        const headlines = scenes.scenes
+          .filter((s) => s.type === "news" && s.title)
+          .map((s) => s.title!)
+
+        const description = buildVideoDescription(date, headlines, pageUrl, audioUrl)
+
+        const videoId = await uploadVideo({
+          accessToken,
+          videoPath: outputVideoPath,
+          title: scenes.youtubeTitle || `YOMOO 每日AI快送 — ${date}`,
+          description,
+          tags: ["AI", "每日AI快送", "YOMOO", "科技新闻", "AI新闻"],
+          categoryId: "28",
+          privacyStatus: "public",
+          onProgress: (pct) => callbacks.onStatus(`Uploading to YouTube: ${pct}%`),
+        })
+
+        try {
+          await setThumbnail(videoId, thumbnailOutputPath, accessToken)
+          callbacks.onStatus("Thumbnail set successfully")
+        } catch (thumbErr) {
+          console.info("[pipeline-video] Thumbnail set failed (non-fatal):", thumbErr)
+        }
+
+        youtubeUrl = `https://www.youtube.com/watch?v=${videoId}`
+        console.info("[pipeline-video] YouTube upload complete:", youtubeUrl)
+        callbacks.onStatus(`YouTube upload complete: ${youtubeUrl}`)
+      } catch (err) {
+        console.info("[pipeline-video] YouTube upload failed:", err)
+        callbacks.onStatus(`YouTube upload failed: ${err}`)
+      }
+    }
+  } catch (err) {
+    callbacks.onError("video", `Video generation failed: ${err}`)
+    return
   }
 
   callbacks.onProgress(total, total)

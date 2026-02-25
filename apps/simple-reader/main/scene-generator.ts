@@ -297,6 +297,9 @@ Return ONLY valid JSON matching this structure (no markdown fences):
 
   const scenes = JSON.parse(jsonStr) as ScenesJson
 
+  // Post-process: correct scene start/end boundaries using Deepgram-aligned segments
+  postProcessSceneBoundaries(scenes, alignedSegments)
+
   // Post-process: fix overview duration (minimum 10s)
   postProcessOverviewDuration(scenes)
 
@@ -309,6 +312,117 @@ Return ONLY valid JSON matching this structure (no markdown fences):
   onStatus?.(`Generated ${scenes.scenes.length} scenes`)
 
   return scenes
+}
+
+/**
+ * Correct scene start/end boundaries using Deepgram-aligned segment timestamps.
+ *
+ * Claude generates scene start/end times by "guessing" from the aligned segments,
+ * but its timing can drift significantly from the actual audio. This function
+ * matches each scene's content (title, points) back to aligned segments via fuzzy
+ * text matching and overwrites start/end with the precise Deepgram timestamps.
+ */
+function postProcessSceneBoundaries(scenes: ScenesJson, segments: AlignedSegment[]): void {
+  if (segments.length === 0) return
+
+  const { audioDuration } = scenes
+
+  // For each news scene, find matching aligned segments by fuzzy-matching
+  // the scene title and point texts against segment content.
+  for (const scene of scenes.scenes) {
+    if (scene.type === "intro") {
+      // Intro is always 0 to its declared end
+      scene.start = 0
+      continue
+    }
+    if (scene.type === "outro") {
+      // Outro runs to end of audio
+      scene.end = audioDuration
+      continue
+    }
+
+    // Collect all text content from this scene for matching
+    const sceneTexts: string[] = []
+    if (scene.title) sceneTexts.push(scene.title)
+    if (scene.points) {
+      for (const p of scene.points) sceneTexts.push(p.text)
+    }
+    if (scene.headlines) {
+      for (const h of scene.headlines) sceneTexts.push(h)
+    }
+
+    if (sceneTexts.length === 0) continue
+
+    // Find all segments that match any of this scene's texts
+    const matchedSegments = findMatchingSegments(sceneTexts, segments)
+
+    if (matchedSegments.length > 0) {
+      const oldStart = scene.start
+      const oldEnd = scene.end
+      const newStart = matchedSegments[0]!.start
+      const newEnd = matchedSegments.at(-1)!.end
+
+      scene.start = newStart
+      scene.end = newEnd
+
+      console.info(
+        `[scene-generator] Scene "${(scene.title || scene.type).slice(0, 30)}" boundary: ${oldStart.toFixed(1)}s-${oldEnd.toFixed(1)}s → ${newStart.toFixed(1)}s-${newEnd.toFixed(1)}s`,
+      )
+    }
+  }
+
+  // Fix gaps and overlaps: ensure scenes are contiguous
+  const sorted = scenes.scenes.sort((a, b) => a.start - b.start)
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1]!
+    const curr = sorted[i]!
+
+    if (curr.start < prev.end) {
+      // Overlap: split at midpoint
+      const mid = (prev.end + curr.start) / 2
+      prev.end = mid
+      curr.start = mid
+    } else if (curr.start > prev.end + 0.5) {
+      // Gap > 0.5s: extend previous scene to close it
+      prev.end = curr.start
+    }
+  }
+}
+
+/**
+ * Find aligned segments whose text matches any of the given scene texts.
+ * Returns matched segments in their original order (sorted by start time).
+ */
+function findMatchingSegments(sceneTexts: string[], segments: AlignedSegment[]): AlignedSegment[] {
+  const normalizedSceneTexts = sceneTexts.map((t) => normalizeText(t))
+  const matched = new Set<number>()
+
+  for (const [si, segment] of segments.entries()) {
+    const segNorm = normalizeText(segment!.text)
+    if (segNorm.length === 0) continue
+
+    for (const sceneText of normalizedSceneTexts) {
+      if (sceneText.length === 0) continue
+
+      // Check if significant overlap exists between scene text and segment
+      // Use key phrases (first 12 chars) for fast filtering
+      const keyPhrase = sceneText.slice(0, 12)
+      if (segNorm.includes(keyPhrase)) {
+        matched.add(si)
+        break
+      }
+
+      // Also check if segment contains substantial portion of any point text
+      const overlap = computeOverlapScore(sceneText, segNorm)
+      if (overlap > 0.5) {
+        matched.add(si)
+        break
+      }
+    }
+  }
+
+  // Return matched segments sorted by start time
+  return [...matched].sort((a, b) => a - b).map((i) => segments[i]!)
 }
 
 /**

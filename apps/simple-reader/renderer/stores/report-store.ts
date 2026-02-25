@@ -286,6 +286,80 @@ export const useReportStore = create<ReportState>((set, get) => ({
     }
   },
 
+  startVideoOnly: async () => {
+    set({
+      pipelineRunning: true,
+      pipelineStage: "",
+      pipelineStatus: "Starting Video-Only Pipeline...",
+      pipelineLogs: [`${formatLogTime()} Starting Video-Only Pipeline...`],
+      pipelineStep: 0,
+      pipelineError: null,
+      pipelineErrorStage: null,
+      pipelineResult: null,
+    })
+
+    const removeStageListener = window.api.onPipelineStage((stage: string) => {
+      set((state) => ({
+        pipelineStage: stage,
+        pipelineLogs: [...state.pipelineLogs, `${formatLogTime()} ▶ Stage: ${stage}`],
+      }))
+    })
+
+    const removeStatusListener = window.api.onPipelineStatus((status: string) => {
+      set((state) => ({
+        pipelineStatus: status,
+        pipelineLogs: [...state.pipelineLogs, `${formatLogTime()} ${status}`],
+      }))
+    })
+
+    const removeProgressListener = window.api.onPipelineProgress((step: number, total: number) => {
+      set({ pipelineStep: step, pipelineTotal: total })
+    })
+
+    const removeDoneListener = window.api.onPipelineDone(
+      (result: { pageUrl: string; audioUrl: string; date: string; youtubeUrl?: string }) => {
+        set((state) => ({
+          pipelineResult: result,
+          pipelineLogs: [...state.pipelineLogs, `${formatLogTime()} ✓ Video pipeline complete!`],
+        }))
+      },
+    )
+
+    const removeErrorListener = window.api.onPipelineError((stage: string, error: string) => {
+      set((state) => ({
+        pipelineError: error,
+        pipelineErrorStage: stage,
+        pipelineLogs: [...state.pipelineLogs, `${formatLogTime()} ✗ Error [${stage}]: ${error}`],
+      }))
+    })
+
+    try {
+      const result = await window.api.runVideoOnly()
+      if (!result.success) {
+        const errorMsg = result.error || "Unknown error"
+        set((state) => ({
+          pipelineError: errorMsg,
+          pipelineErrorStage: state.pipelineErrorStage || "init",
+          pipelineLogs: [...state.pipelineLogs, `${formatLogTime()} ✗ ${errorMsg}`],
+        }))
+      }
+    } catch (err) {
+      const errorMsg = `Video pipeline failed: ${err}`
+      set((state) => ({
+        pipelineError: errorMsg,
+        pipelineErrorStage: "init",
+        pipelineLogs: [...state.pipelineLogs, `${formatLogTime()} ✗ ${errorMsg}`],
+      }))
+    } finally {
+      set({ pipelineRunning: false })
+      removeStageListener()
+      removeStatusListener()
+      removeProgressListener()
+      removeDoneListener()
+      removeErrorListener()
+    }
+  },
+
   startAudioGeneration: async (text: string) => {
     set({
       audioGenerating: true,

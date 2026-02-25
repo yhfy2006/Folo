@@ -331,6 +331,33 @@ function generateRootIndexHtml(firstEpisodeLink: string): string {
   <meta name="theme-color" content="#1a1410" media="(prefers-color-scheme: dark)">
   <meta name="theme-color" content="#fffbf5" media="(prefers-color-scheme: light)">
   <title>YOMOO 每日AI快送</title>
+  <meta name="description" content="YOMOO 每日AI快送 - 每天精选最重要的AI和科技新闻，AI生成播客，一键收听。">
+  <link rel="canonical" href="https://daily.yomoo.net/">
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="YOMOO 每日AI快送">
+  <meta property="og:description" content="YOMOO 每日AI快送 - 每天精选最重要的AI和科技新闻，AI生成播客，一键收听。">
+  <meta property="og:url" content="https://daily.yomoo.net/">
+  <meta property="og:site_name" content="YOMOO 每日AI快送">
+  <meta property="og:locale" content="zh_CN">
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="YOMOO 每日AI快送">
+  <meta name="twitter:description" content="每天精选最重要的AI和科技新闻，AI生成播客，一键收听。">
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "YOMOO 每日AI快送",
+    "description": "每天精选最重要的AI和科技新闻，AI生成播客，一键收听。",
+    "url": "https://daily.yomoo.net/",
+    "publisher": {
+      "@type": "Organization",
+      "name": "YOMOO"
+    }
+  }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800;900&family=Noto+Serif+SC:wght@600;700;900&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -587,6 +614,103 @@ function generateRootIndexHtml(firstEpisodeLink: string): string {
 
 export function getGitHubPagesUrl(_owner: string, date: string): string {
   return `https://daily.yomoo.net/episodes/${date}/index.html`
+}
+
+export async function updateSitemap(token: string, owner: string, date: string): Promise<void> {
+  const repo = "yomoo-daily"
+  const sitemapPath = "sitemap.xml"
+
+  // Try to fetch existing sitemap
+  let existingUrls: string[] = []
+  let sha: string | undefined
+  const existResp = await ghFetch(`/repos/${owner}/${repo}/contents/${sitemapPath}`, token)
+  if (existResp.ok) {
+    const data = await existResp.json()
+    sha = data.sha
+    const content = Buffer.from(data.content, "base64").toString("utf-8")
+    // Extract existing <loc> entries
+    const locMatches = content.match(/<loc>(.*?)<\/loc>/g) || []
+    existingUrls = locMatches.map((m: string) => m.replaceAll(/<\/?loc>/g, ""))
+  }
+
+  const newUrl = `https://daily.yomoo.net/episodes/${date}/index.html`
+  if (existingUrls.includes(newUrl)) {
+    console.info("[github] Sitemap already contains", date)
+    return
+  }
+
+  // Build URL entries: homepage + all episodes
+  const allUrls = new Set(existingUrls)
+  allUrls.add("https://daily.yomoo.net/")
+  allUrls.add(newUrl)
+
+  const today = new Date().toISOString().slice(0, 10)
+  const urlEntries = [...allUrls]
+    .map(
+      (url) => `  <url>
+    <loc>${url}</loc>
+    <lastmod>${today}</lastmod>
+  </url>`,
+    )
+    .join("\n")
+
+  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urlEntries}
+</urlset>
+`
+
+  const body: Record<string, unknown> = {
+    message: `chore: update sitemap for ${date}`,
+    content: Buffer.from(sitemap).toString("base64"),
+  }
+  if (sha) {
+    body.sha = sha
+  }
+
+  const resp = await ghFetch(`/repos/${owner}/${repo}/contents/${sitemapPath}`, token, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+
+  if (!resp.ok) {
+    console.warn("[github] Failed to update sitemap:", resp.status)
+  } else {
+    console.info("[github] Sitemap updated with", date)
+  }
+}
+
+export async function ensureRobotsTxt(token: string, owner: string): Promise<void> {
+  const repo = "yomoo-daily"
+  const filePath = "robots.txt"
+
+  // Check if already exists
+  const existResp = await ghFetch(`/repos/${owner}/${repo}/contents/${filePath}`, token)
+  if (existResp.ok) {
+    console.info("[github] robots.txt already exists, skipping")
+    return
+  }
+
+  const content = `User-agent: *
+Allow: /
+Sitemap: https://daily.yomoo.net/sitemap.xml
+`
+
+  const resp = await ghFetch(`/repos/${owner}/${repo}/contents/${filePath}`, token, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: "chore: add robots.txt",
+      content: Buffer.from(content).toString("base64"),
+    }),
+  })
+
+  if (!resp.ok) {
+    console.warn("[github] Failed to create robots.txt:", resp.status)
+  } else {
+    console.info("[github] robots.txt created")
+  }
 }
 
 function sleep(ms: number): Promise<void> {

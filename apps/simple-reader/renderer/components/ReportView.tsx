@@ -362,7 +362,11 @@ export function ReportView() {
           !pipelineRunning &&
           !pipelineResult &&
           !pipelineError && (
-            <ReportHistory onGenerate={startReport} onStartPipeline={startPipeline} />
+            <ReportHistory
+              onGenerate={startReport}
+              onStartPipeline={startPipeline}
+              onStartVideoOnly={useReportStore.getState().startVideoOnly}
+            />
           )}
 
         {generating && !content && (
@@ -409,9 +413,11 @@ interface SavedReport {
 function ReportHistory({
   onGenerate,
   onStartPipeline,
+  onStartVideoOnly,
 }: {
   onGenerate: () => void
   onStartPipeline: () => void
+  onStartVideoOnly: () => void
 }) {
   const [reports, setReports] = React.useState<SavedReport[]>([])
   const [loaded, setLoaded] = React.useState(false)
@@ -471,6 +477,13 @@ function ReportHistory({
             style={{ background: "linear-gradient(135deg, #FF6B35, #ff8f5e)" }}
           >
             YOMOO Pipeline
+          </button>
+          <button
+            onClick={onStartVideoOnly}
+            className="rounded px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+            style={{ background: "linear-gradient(135deg, #8B5CF6, #a78bfa)" }}
+          >
+            Video Only
           </button>
         </div>
       </div>
