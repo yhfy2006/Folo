@@ -319,110 +319,98 @@ Return ONLY valid JSON matching this structure (no markdown fences):
  *
  * Claude generates scene start/end times by "guessing" from the aligned segments,
  * but its timing can drift significantly from the actual audio. This function
- * matches each scene's content (title, points) back to aligned segments via fuzzy
- * text matching and overwrites start/end with the precise Deepgram timestamps.
+ * finds the closest aligned segment for each scene boundary and snaps it to the
+ * precise Deepgram timestamp.
+ *
+ * Strategy: For each scene (in order), find the aligned segment whose time is
+ * closest to the scene's Claude-estimated start time, then set the scene's
+ * start to that segment's start. The previous scene's end is set to the same
+ * value to keep scenes contiguous. This preserves Claude's scene ordering while
+ * correcting the actual timestamps.
  */
 function postProcessSceneBoundaries(scenes: ScenesJson, segments: AlignedSegment[]): void {
   if (segments.length === 0) return
 
   const { audioDuration } = scenes
 
-  // For each news scene, find matching aligned segments by fuzzy-matching
-  // the scene title and point texts against segment content.
+  // Sort segments by start time (should already be sorted, but be safe)
+  const sortedSegs = [...segments].sort((a, b) => a.start - b.start)
+
+  // Keep scenes in their original order (Claude's topic ordering)
+  // Only correct news/overview scenes; intro/outro are fixed anchors
   for (const scene of scenes.scenes) {
     if (scene.type === "intro") {
-      // Intro is always 0 to its declared end
       scene.start = 0
       continue
     }
     if (scene.type === "outro") {
-      // Outro runs to end of audio
       scene.end = audioDuration
       continue
     }
 
-    // Collect all text content from this scene for matching
-    const sceneTexts: string[] = []
-    if (scene.title) sceneTexts.push(scene.title)
-    if (scene.points) {
-      for (const p of scene.points) sceneTexts.push(p.text)
-    }
-    if (scene.headlines) {
-      for (const h of scene.headlines) sceneTexts.push(h)
-    }
+    // Find the segment closest to this scene's start time
+    const closestStart = findClosestSegment(sortedSegs, scene.start)
+    // Find the segment closest to this scene's end time
+    const closestEnd = findClosestSegment(sortedSegs, scene.end)
 
-    if (sceneTexts.length === 0) continue
-
-    // Find all segments that match any of this scene's texts
-    const matchedSegments = findMatchingSegments(sceneTexts, segments)
-
-    if (matchedSegments.length > 0) {
+    if (closestStart && closestEnd) {
       const oldStart = scene.start
       const oldEnd = scene.end
-      const newStart = matchedSegments[0]!.start
-      const newEnd = matchedSegments.at(-1)!.end
-
-      scene.start = newStart
-      scene.end = newEnd
+      scene.start = closestStart.start
+      scene.end = closestEnd.end
 
       console.info(
-        `[scene-generator] Scene "${(scene.title || scene.type).slice(0, 30)}" boundary: ${oldStart.toFixed(1)}s-${oldEnd.toFixed(1)}s → ${newStart.toFixed(1)}s-${newEnd.toFixed(1)}s`,
+        `[scene-generator] Scene "${(scene.title || scene.type).slice(0, 30)}" boundary: ${oldStart.toFixed(1)}s-${oldEnd.toFixed(1)}s → ${scene.start.toFixed(1)}s-${scene.end.toFixed(1)}s`,
       )
     }
   }
 
-  // Fix gaps and overlaps: ensure scenes are contiguous
-  const sorted = scenes.scenes.sort((a, b) => a.start - b.start)
-  for (let i = 1; i < sorted.length; i++) {
-    const prev = sorted[i - 1]!
-    const curr = sorted[i]!
+  // Ensure scenes are contiguous: each scene's start = previous scene's end
+  // This avoids gaps and overlaps without the risky midpoint split
+  const ordered = scenes.scenes // already in Claude's original order
+  for (let i = 1; i < ordered.length; i++) {
+    const prev = ordered[i - 1]!
+    const curr = ordered[i]!
 
-    if (curr.start < prev.end) {
-      // Overlap: split at midpoint
-      const mid = (prev.end + curr.start) / 2
-      prev.end = mid
-      curr.start = mid
-    } else if (curr.start > prev.end + 0.5) {
-      // Gap > 0.5s: extend previous scene to close it
-      prev.end = curr.start
+    // Snap: current scene starts where previous ends
+    curr.start = prev.end
+  }
+
+  // Safety: ensure no scene has end <= start (minimum 1 second)
+  for (const scene of scenes.scenes) {
+    if (scene.end <= scene.start) {
+      scene.end = scene.start + 1
     }
+  }
+
+  // Final scene extends to audio end
+  const last = scenes.scenes.at(-1)
+  if (last) {
+    last.end = audioDuration
   }
 }
 
 /**
- * Find aligned segments whose text matches any of the given scene texts.
- * Returns matched segments in their original order (sorted by start time).
+ * Find the aligned segment whose start time is closest to the target time.
  */
-function findMatchingSegments(sceneTexts: string[], segments: AlignedSegment[]): AlignedSegment[] {
-  const normalizedSceneTexts = sceneTexts.map((t) => normalizeText(t))
-  const matched = new Set<number>()
+function findClosestSegment(
+  sortedSegments: AlignedSegment[],
+  targetTime: number,
+): AlignedSegment | null {
+  if (sortedSegments.length === 0) return null
 
-  for (const [si, segment] of segments.entries()) {
-    const segNorm = normalizeText(segment!.text)
-    if (segNorm.length === 0) continue
+  let best = sortedSegments[0]!
+  let bestDist = Math.abs(best.start - targetTime)
 
-    for (const sceneText of normalizedSceneTexts) {
-      if (sceneText.length === 0) continue
-
-      // Check if significant overlap exists between scene text and segment
-      // Use key phrases (first 12 chars) for fast filtering
-      const keyPhrase = sceneText.slice(0, 12)
-      if (segNorm.includes(keyPhrase)) {
-        matched.add(si)
-        break
-      }
-
-      // Also check if segment contains substantial portion of any point text
-      const overlap = computeOverlapScore(sceneText, segNorm)
-      if (overlap > 0.5) {
-        matched.add(si)
-        break
-      }
+  for (const seg of sortedSegments) {
+    const dist = Math.abs(seg.start - targetTime)
+    if (dist < bestDist) {
+      bestDist = dist
+      best = seg
     }
   }
 
-  // Return matched segments sorted by start time
-  return [...matched].sort((a, b) => a - b).map((i) => segments[i]!)
+  return best
 }
 
 /**
