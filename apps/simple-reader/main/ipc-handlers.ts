@@ -261,8 +261,8 @@ export function registerIpcHandlers() {
   })
 
   // --- YOMOO Pipeline ---
-  ipcMain.handle("run-yomoo-pipeline", async (event) => {
-    console.info("[ipc] run-yomoo-pipeline called")
+  ipcMain.handle("run-yomoo-pipeline", async (event, groupId?: string) => {
+    console.info("[ipc] run-yomoo-pipeline called, groupId:", groupId)
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return { success: false, error: "No window found" }
 
@@ -271,28 +271,31 @@ export function registerIpcHandlers() {
       const { runPipeline } = await import("./pipeline")
       console.info("[ipc] pipeline module loaded successfully")
 
-      await runPipeline({
-        onStage: (stage) => {
-          console.info("[pipeline] stage:", stage)
-          win.webContents.send("pipeline-stage", stage)
+      await runPipeline(
+        {
+          onStage: (stage) => {
+            console.info("[pipeline] stage:", stage)
+            win.webContents.send("pipeline-stage", stage)
+          },
+          onStatus: (status) => {
+            console.info("[pipeline] status:", status)
+            win.webContents.send("pipeline-status", status)
+          },
+          onProgress: (step, total) => {
+            console.info("[pipeline] progress:", step, "/", total)
+            win.webContents.send("pipeline-progress", step, total)
+          },
+          onDone: (result) => {
+            console.info("[pipeline] done:", result)
+            win.webContents.send("pipeline-done", result)
+          },
+          onError: (stage, error) => {
+            console.error("[pipeline] error at", stage, ":", error)
+            win.webContents.send("pipeline-error", stage, error)
+          },
         },
-        onStatus: (status) => {
-          console.info("[pipeline] status:", status)
-          win.webContents.send("pipeline-status", status)
-        },
-        onProgress: (step, total) => {
-          console.info("[pipeline] progress:", step, "/", total)
-          win.webContents.send("pipeline-progress", step, total)
-        },
-        onDone: (result) => {
-          console.info("[pipeline] done:", result)
-          win.webContents.send("pipeline-done", result)
-        },
-        onError: (stage, error) => {
-          console.error("[pipeline] error at", stage, ":", error)
-          win.webContents.send("pipeline-error", stage, error)
-        },
-      })
+        groupId,
+      )
       return { success: true }
     } catch (err) {
       console.error("[ipc] run-yomoo-pipeline error:", err)

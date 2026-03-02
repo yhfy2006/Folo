@@ -59,9 +59,16 @@ export interface PipelineCallbacks {
  * 8. Video render (if alignment succeeded)
  * 9. YouTube upload (if YouTube configured)
  */
-export async function runPipeline(callbacks: PipelineCallbacks): Promise<void> {
+export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string): Promise<void> {
   const prefs = loadPreferences()
   const date = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+
+  // Resolve group name for publishing paths
+  let groupName: string | undefined
+  if (groupId) {
+    const group = queryOne<{ name: string }>(`SELECT name FROM feed_groups WHERE id = ?`, [groupId])
+    groupName = group?.name
+  }
 
   // Determine which optional stages are enabled
   const videoEnabled = !!prefs.deepgramApiKey
@@ -113,7 +120,7 @@ export async function runPipeline(callbacks: PipelineCallbacks): Promise<void> {
   try {
     reportContent = await generateReportToString((status) => {
       callbacks.onStatus(status)
-    })
+    }, groupId)
   } catch (err) {
     callbacks.onError("report", `Report generation failed: ${err}`)
     return
@@ -210,17 +217,22 @@ export async function runPipeline(callbacks: PipelineCallbacks): Promise<void> {
     const html = generateHtmlPage(reportContent, audioUrl, date, podcastScript, seoDescription)
     const htmlBase64 = Buffer.from(html).toString("base64")
 
+    const episodePath = groupName ? `episodes/${groupName}/${date}` : `episodes/${date}`
+
     await commitFile(
       prefs.githubToken,
       owner,
       "yomoo-daily",
-      `episodes/${date}/index.html`,
+      `${episodePath}/index.html`,
       htmlBase64,
-      `feat: add episode ${date}`,
+      `feat: add episode ${date}${groupName ? ` (${groupName})` : ""}`,
     )
 
     // Update root index
-    await updateRootIndex(prefs.githubToken, owner, date, `YOMOO 每日AI快送 - ${date}`)
+    const episodeTitle = groupName
+      ? `${groupName} - YOMOO 每日AI快送 - ${date}`
+      : `YOMOO 每日AI快送 - ${date}`
+    await updateRootIndex(prefs.githubToken, owner, date, episodeTitle)
 
     // Commit email-safe HTML (triggers GitHub Action to send newsletter)
     callbacks.onStatus("Committing email version...")
@@ -231,9 +243,9 @@ export async function runPipeline(callbacks: PipelineCallbacks): Promise<void> {
       prefs.githubToken,
       owner,
       "yomoo-daily",
-      `episodes/${date}/email.html`,
+      `${episodePath}/email.html`,
       emailBase64,
-      `feat: add email version for ${date}`,
+      `feat: add email version for ${date}${groupName ? ` (${groupName})` : ""}`,
     )
 
     // Update sitemap and ensure robots.txt
