@@ -3,7 +3,8 @@ import { contextBridge, ipcRenderer } from "electron"
 const api = {
   importOPML: () => ipcRenderer.invoke("import-opml"),
   getFeeds: () => ipcRenderer.invoke("get-feeds"),
-  getEntries: (feedId?: string) => ipcRenderer.invoke("get-entries", feedId),
+  getEntries: (feedId?: string, groupId?: string) =>
+    ipcRenderer.invoke("get-entries", feedId, groupId),
   getEntry: (entryId: string) => ipcRenderer.invoke("get-entry", entryId),
   markRead: (entryId: string) => ipcRenderer.invoke("mark-read", entryId),
   refreshFeeds: () => ipcRenderer.invoke("refresh-feeds"),
@@ -29,11 +30,11 @@ const api = {
   },
 
   // AI Report
-  generateReport: () => ipcRenderer.invoke("generate-report"),
+  generateReport: (groupId?: string) => ipcRenderer.invoke("generate-report", groupId),
   getPreferences: () => ipcRenderer.invoke("get-preferences"),
   savePreferences: (prefs: any) => ipcRenderer.invoke("save-preferences", prefs),
   exportReport: (content: string) => ipcRenderer.invoke("export-report", content),
-  getReports: () => ipcRenderer.invoke("get-reports"),
+  getReports: (groupId?: string) => ipcRenderer.invoke("get-reports", groupId),
   getReport: (reportId: string) => ipcRenderer.invoke("get-report", reportId),
   deleteReport: (reportId: string) => ipcRenderer.invoke("delete-report", reportId),
   onReportChunk: (callback: (chunk: string) => void) => {

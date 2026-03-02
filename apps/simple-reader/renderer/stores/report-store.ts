@@ -44,7 +44,7 @@ interface ReportState {
   setError: (error: string | null) => void
   reset: () => void
 
-  startReport: () => Promise<void>
+  startReport: (groupId?: string) => Promise<void>
   startPodcastScript: (reportContent: string) => Promise<void>
   resetPodcast: () => void
   setShowPodcast: (show: boolean) => void
@@ -52,7 +52,7 @@ interface ReportState {
   startAudioGeneration: (text: string) => Promise<void>
   resetAudio: () => void
 
-  startPipeline: () => Promise<void>
+  startPipeline: (groupId?: string) => Promise<void>
   resetPipeline: () => void
 }
 
@@ -130,7 +130,7 @@ export const useReportStore = create<ReportState>((set, get) => ({
       audioFilePath: null,
     }),
 
-  startReport: async () => {
+  startReport: async (groupId?: string) => {
     set({ generating: true, content: "", error: null, status: "Starting report generation..." })
 
     const removeChunkListener = window.api.onReportChunk((chunk: string) => {
@@ -142,7 +142,7 @@ export const useReportStore = create<ReportState>((set, get) => ({
     })
 
     try {
-      const result = await window.api.generateReport()
+      const result = await window.api.generateReport(groupId)
       if (!result.success) {
         set({ error: result.error || "Unknown error" })
       }
@@ -212,7 +212,7 @@ export const useReportStore = create<ReportState>((set, get) => ({
       pipelineResult: null,
     }),
 
-  startPipeline: async () => {
+  startPipeline: async (groupId?: string) => {
     set({
       pipelineRunning: true,
       pipelineStage: "",
@@ -260,7 +260,7 @@ export const useReportStore = create<ReportState>((set, get) => ({
     })
 
     try {
-      const result = await window.api.runYomooPipeline()
+      const result = await window.api.runYomooPipeline(groupId)
       if (!result.success) {
         const errorMsg = result.error || "Unknown error"
         set((state) => ({

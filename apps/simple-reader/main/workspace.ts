@@ -17,9 +17,14 @@ export function initWorkspace(): void {
   const workspacePath = getWorkspacePath()
   const claudeDir = path.join(workspacePath, ".claude")
   const skillsDir = path.join(claudeDir, "skills")
+  const builtinDir = path.join(skillsDir, "builtin")
 
-  // Create directories
-  fs.mkdirSync(skillsDir, { recursive: true })
+  // Create directories (including builtin subdirectory)
+  fs.mkdirSync(builtinDir, { recursive: true })
+
+  // Also ensure user global skills directory exists
+  const userSkillsDir = path.join(app.getPath("userData"), "skills")
+  fs.mkdirSync(userSkillsDir, { recursive: true })
 
   // Write CLAUDE.md (always overwrite to keep in sync with app updates)
   const claudeMd = `# Simple Reader AI Workspace
@@ -39,13 +44,25 @@ Your primary role is to analyze RSS feed entries and generate insightful reports
 
   fs.writeFileSync(path.join(workspacePath, "CLAUDE.md"), claudeMd, "utf-8")
 
-  // Write skills (only if they don't exist, so users can customize)
-  writeSkillIfNotExists(
-    skillsDir,
-    "screening.md",
+  // Write builtin skills (always overwrite to keep in sync with app updates)
+  initBuiltinSkills(builtinDir)
+
+  console.info("[workspace] Initialized at:", workspacePath)
+}
+
+/**
+ * Write all builtin skill files to the builtin/ subdirectory.
+ * These are always overwritten on launch to stay in sync with the app.
+ * Users can override them by placing a same-named file in:
+ *   - <userData>/skills/ (user global, survives app updates)
+ *   - <workspace>/.claude/skills/ (workspace-level, highest priority)
+ */
+function initBuiltinSkills(builtinDir: string): void {
+  fs.writeFileSync(
+    path.join(builtinDir, "screening.md"),
     `---
 name: screening
-description: Screen RSS feed entries and select the most valuable ones
+description: "Screen RSS feed entries and select the most valuable ones. Use when: evaluating a batch of entries to pick the best. NOT for: generating reports, scripts, or analysis."
 ---
 
 You are a content curator. Review the provided RSS feed entries and select the most valuable, interesting, or important ones.
@@ -67,14 +84,14 @@ Return ONLY a JSON array of the selected entry NUMBERS (the number in brackets),
 
 Do not include any other text, explanation, or formatting.
 `,
+    "utf-8",
   )
 
-  writeSkillIfNotExists(
-    skillsDir,
-    "daily-report.md",
+  fs.writeFileSync(
+    path.join(builtinDir, "daily-report.md"),
     `---
 name: daily-report
-description: Generate a daily briefing report from curated RSS feed articles
+description: "Generate a structured daily briefing from curated articles. Use when: creating a report from selected entries. NOT for: screening entries or podcast conversion."
 ---
 
 You are a professional content curator creating a daily briefing report.
@@ -99,14 +116,14 @@ You are a professional content curator creating a daily briefing report.
 - Add brief editorial context when it helps the reader understand significance
 - Keep paragraphs short — 2-3 sentences max
 `,
+    "utf-8",
   )
 
-  writeSkillIfNotExists(
-    skillsDir,
-    "topic-deep-dive.md",
+  fs.writeFileSync(
+    path.join(builtinDir, "topic-deep-dive.md"),
     `---
 name: topic-deep-dive
-description: Deep dive analysis on a specific topic from feed entries
+description: "Deep-dive analysis on a specific topic from feed entries. Use when: user requests analysis of a particular theme or topic. NOT for: daily/weekly reports."
 ---
 
 You are an expert analyst. Given a set of RSS feed entries related to a specific topic, provide a comprehensive deep-dive analysis.
@@ -127,14 +144,14 @@ You are an expert analyst. Given a set of RSS feed entries related to a specific
 - Use data and quotes from the source material
 - Keep it focused and actionable
 `,
+    "utf-8",
   )
 
-  writeSkillIfNotExists(
-    skillsDir,
-    "weekly-summary.md",
+  fs.writeFileSync(
+    path.join(builtinDir, "weekly-summary.md"),
     `---
 name: weekly-summary
-description: Generate a weekly summary report from the past week's feed entries
+description: "Generate a weekly digest from the past week's entries. Use when: creating a weekly review report. NOT for: daily reports or individual topics."
 ---
 
 You are a professional content curator creating a weekly digest.
@@ -154,15 +171,14 @@ You are a professional content curator creating a weekly digest.
 - Show how stories evolved over the week
 - Use Markdown formatting
 `,
+    "utf-8",
   )
 
-  // Write podcast-script skill
-  writeSkillIfNotExists(
-    skillsDir,
-    "podcast-script.md",
+  fs.writeFileSync(
+    path.join(builtinDir, "podcast-script.md"),
     `---
 name: podcast-script
-description: Convert a daily briefing report into a podcast broadcast script
+description: "Convert a daily briefing report into a podcast broadcast script. Use when: turning a written report into spoken audio script. NOT for: generating reports or screening."
 ---
 
 You are a professional podcast script writer. Convert the provided daily briefing report into an engaging broadcast script (口播文案) suitable for audio generation.
@@ -212,14 +228,8 @@ Follow the "小Lin说" style methodology:
 - Use blank lines between paragraphs for breathing pauses
 - The output should read exactly like a person talking — ready for TTS/audio generation
 `,
+    "utf-8",
   )
 
-  console.info("[workspace] Initialized at:", workspacePath)
-}
-
-function writeSkillIfNotExists(skillsDir: string, filename: string, content: string): void {
-  const filePath = path.join(skillsDir, filename)
-  if (!fs.existsSync(filePath)) {
-    fs.writeFileSync(filePath, content, "utf-8")
-  }
+  console.info("[workspace] Wrote builtin skills to:", builtinDir)
 }

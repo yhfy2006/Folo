@@ -1,45 +1,105 @@
 import * as React from "react"
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 
 import { useEntryStore } from "../stores/entry-store"
 import { useFeedStore } from "../stores/feed-store"
+import type { FeedGroup } from "../stores/group-store"
+import { useGroupStore } from "../stores/group-store"
 import { useReportStore } from "../stores/report-store"
+import { GroupSettings } from "./GroupSettings"
 
 export function FeedSidebar() {
-  const { feeds, selectedFeedId, setSelectedFeedId, unreadCounts, loadFeeds, loadUnreadCounts } =
-    useFeedStore()
+  const {
+    feeds,
+    selectedFeedId,
+    setSelectedFeedId,
+    setFeeds,
+    unreadCounts,
+    loadFeeds,
+    loadUnreadCounts,
+  } = useFeedStore()
   const { loadEntries, setSelectedEntry, setSelectedEntryId } = useEntryStore()
   const { showReport, setShowReport, generating } = useReportStore()
+  const { groups, selectedGroupId, setSelectedGroupId, loadGroups } = useGroupStore()
   const [addingFeed, setAddingFeed] = useState(false)
   const [newFeedUrl, setNewFeedUrl] = useState("")
   const [refreshing, setRefreshing] = useState(false)
+  const [settingsGroup, setSettingsGroup] = useState<FeedGroup | null>(null)
+
+  // Load groups on mount
+  useEffect(() => {
+    loadGroups()
+  }, [loadGroups])
+
+  // When group selection changes, reload feeds for that group
+  useEffect(() => {
+    if (selectedGroupId) {
+      window.api.getGroupFeeds(selectedGroupId).then((groupFeeds) => {
+        setFeeds(groupFeeds)
+      })
+    } else {
+      loadFeeds()
+    }
+  }, [selectedGroupId, setFeeds, loadFeeds])
 
   const handleSelectFeed = useCallback(
     async (feedId: string | null) => {
       setSelectedFeedId(feedId)
       setSelectedEntry(null)
       setSelectedEntryId(null)
-      await loadEntries(feedId || undefined)
+      if (feedId) {
+        await loadEntries(feedId)
+      } else if (selectedGroupId) {
+        await loadEntries(undefined, selectedGroupId)
+      } else {
+        await loadEntries()
+      }
     },
-    [setSelectedFeedId, setSelectedEntry, setSelectedEntryId, loadEntries],
+    [setSelectedFeedId, setSelectedEntry, setSelectedEntryId, loadEntries, selectedGroupId],
+  )
+
+  const handleSelectGroup = useCallback(
+    async (groupId: string | null) => {
+      setSelectedGroupId(groupId)
+      setSelectedFeedId(null)
+      setSelectedEntry(null)
+      setSelectedEntryId(null)
+      // Load entries for the selected group
+      if (groupId) {
+        await loadEntries(undefined, groupId)
+      } else {
+        await loadEntries()
+      }
+    },
+    [setSelectedGroupId, setSelectedFeedId, setSelectedEntry, setSelectedEntryId, loadEntries],
   )
 
   const handleImportOPML = useCallback(async () => {
     const result = await window.api.importOPML()
-    if (result.success) {
+    if (result && result.groupId) {
+      await loadGroups()
+      await loadFeeds()
+      await loadUnreadCounts()
+      setSelectedGroupId(result.groupId)
+    } else if (result && result.success) {
       await loadFeeds()
       await loadUnreadCounts()
     }
-  }, [loadFeeds, loadUnreadCounts])
+  }, [loadFeeds, loadUnreadCounts, loadGroups, setSelectedGroupId])
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
     await window.api.refreshFeeds()
-    await loadFeeds()
+    if (selectedGroupId) {
+      const groupFeeds = await window.api.getGroupFeeds(selectedGroupId)
+      setFeeds(groupFeeds)
+    } else {
+      await loadFeeds()
+    }
     await loadUnreadCounts()
     await loadEntries(selectedFeedId || undefined)
     setRefreshing(false)
-  }, [loadFeeds, loadUnreadCounts, loadEntries, selectedFeedId])
+  }, [loadFeeds, loadUnreadCounts, loadEntries, selectedFeedId, selectedGroupId, setFeeds])
 
   const handleDeleteFeed = useCallback(
     async (e: React.MouseEvent, feedId: string) => {
@@ -49,10 +109,23 @@ export function FeedSidebar() {
         setSelectedFeedId(null)
         await loadEntries()
       }
-      await loadFeeds()
+      if (selectedGroupId) {
+        const groupFeeds = await window.api.getGroupFeeds(selectedGroupId)
+        setFeeds(groupFeeds)
+      } else {
+        await loadFeeds()
+      }
       await loadUnreadCounts()
     },
-    [selectedFeedId, setSelectedFeedId, loadFeeds, loadUnreadCounts, loadEntries],
+    [
+      selectedFeedId,
+      selectedGroupId,
+      setSelectedFeedId,
+      setFeeds,
+      loadFeeds,
+      loadUnreadCounts,
+      loadEntries,
+    ],
   )
 
   const handleAddFeed = useCallback(async () => {
@@ -89,7 +162,7 @@ export function FeedSidebar() {
             className="rounded p-1 text-xs hover:bg-[hsl(var(--border))] disabled:opacity-50"
             title="Refresh all feeds"
           >
-            {refreshing ? "⟳" : "↻"}
+            {refreshing ? "..." : "R"}
           </button>
         </div>
       </div>
@@ -133,26 +206,93 @@ export function FeedSidebar() {
 
       {/* Feed list */}
       <div className="flex-1 overflow-y-auto px-1">
-        {/* All feeds item */}
-        <button
-          onClick={() => handleSelectFeed(null)}
-          className={`mb-1 flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs ${
-            selectedFeedId === null
-              ? "bg-[color:var(--accent-color)] text-white"
-              : "hover:bg-[hsl(var(--border))]"
-          }`}
-        >
-          <span className="font-medium">All Feeds</span>
-          {totalUnread > 0 && (
-            <span
-              className={`rounded-full px-1.5 text-[10px] ${
-                selectedFeedId === null ? "bg-white/20" : "bg-[hsl(var(--border))]"
+        {/* Groups section */}
+        {groups.length > 0 && (
+          <div className="mb-2">
+            <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))]">
+              Groups
+            </div>
+            <button
+              onClick={() => handleSelectGroup(null)}
+              className={`mb-0.5 flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs ${
+                selectedGroupId === null
+                  ? "bg-[color:var(--accent-color)] text-white"
+                  : "hover:bg-[hsl(var(--border))]"
               }`}
             >
-              {totalUnread}
-            </span>
-          )}
-        </button>
+              <span className="font-medium">All Feeds</span>
+              {totalUnread > 0 && (
+                <span
+                  className={`rounded-full px-1.5 text-[10px] ${
+                    selectedGroupId === null ? "bg-white/20" : "bg-[hsl(var(--border))]"
+                  }`}
+                >
+                  {totalUnread}
+                </span>
+              )}
+            </button>
+            {groups.map((group) => (
+              <div
+                key={group.id}
+                role="button"
+                tabIndex={0}
+                onClick={() => handleSelectGroup(group.id)}
+                onKeyDown={(e) => e.key === "Enter" && handleSelectGroup(group.id)}
+                className={`group mb-0.5 flex w-full cursor-pointer items-center justify-between rounded px-2 py-1.5 text-left text-xs ${
+                  selectedGroupId === group.id
+                    ? "bg-[color:var(--accent-color)] text-white"
+                    : "hover:bg-[hsl(var(--border))]"
+                }`}
+              >
+                <span className="truncate font-medium">{group.name}</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setSettingsGroup(group)
+                  }}
+                  className={`hidden rounded p-0.5 text-[10px] group-hover:block ${
+                    selectedGroupId === group.id
+                      ? "text-white/70 hover:bg-white/10"
+                      : "text-[hsl(var(--muted-foreground))] hover:bg-[hsl(var(--border))]"
+                  }`}
+                  title="Group settings"
+                >
+                  ...
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* All feeds item (shown when no groups exist) */}
+        {groups.length === 0 && (
+          <button
+            onClick={() => handleSelectFeed(null)}
+            className={`mb-1 flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-xs ${
+              selectedFeedId === null
+                ? "bg-[color:var(--accent-color)] text-white"
+                : "hover:bg-[hsl(var(--border))]"
+            }`}
+          >
+            <span className="font-medium">All Feeds</span>
+            {totalUnread > 0 && (
+              <span
+                className={`rounded-full px-1.5 text-[10px] ${
+                  selectedFeedId === null ? "bg-white/20" : "bg-[hsl(var(--border))]"
+                }`}
+              >
+                {totalUnread}
+              </span>
+            )}
+          </button>
+        )}
+
+        {/* Feeds header */}
+        {feeds.length > 0 && (
+          <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-[hsl(var(--muted-foreground))]">
+            Feeds{selectedGroupId ? ` (${feeds.length})` : ""}
+          </div>
+        )}
 
         {/* Grouped feeds */}
         {Array.from(grouped.entries()).map(([category, categoryFeeds]) => (
@@ -192,7 +332,7 @@ export function FeedSidebar() {
                     }`}
                     title="Delete feed"
                   >
-                    ×
+                    x
                   </button>
                 </span>
               </button>
@@ -226,6 +366,11 @@ export function FeedSidebar() {
           {generating ? "Generating..." : "AI Report"}
         </button>
       </div>
+
+      {/* Group settings modal */}
+      {settingsGroup && (
+        <GroupSettings group={settingsGroup} onClose={() => setSettingsGroup(null)} />
+      )}
     </div>
   )
 }

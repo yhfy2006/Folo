@@ -69,11 +69,20 @@ export function registerIpcHandlers() {
     return queryAll<Feed>("SELECT * FROM feeds ORDER BY category, title")
   })
 
-  ipcMain.handle("get-entries", (_event, feedId?: string) => {
+  ipcMain.handle("get-entries", (_event, feedId?: string, groupId?: string) => {
     if (feedId) {
       return queryAll<Entry>(
         "SELECT * FROM entries WHERE feed_id = ? ORDER BY published_at DESC LIMIT 200",
         [feedId],
+      )
+    }
+    if (groupId) {
+      return queryAll<Entry>(
+        `SELECT e.* FROM entries e
+         INNER JOIN feed_group_feeds gf ON e.feed_id = gf.feed_id
+         WHERE gf.group_id = ?
+         ORDER BY e.published_at DESC LIMIT 200`,
+        [groupId],
       )
     }
     return queryAll<Entry>("SELECT * FROM entries ORDER BY published_at DESC LIMIT 200")
@@ -124,8 +133,8 @@ export function registerIpcHandlers() {
 
   // --- AI Report ---
 
-  ipcMain.handle("generate-report", async (event) => {
-    console.info("[ipc] generate-report called")
+  ipcMain.handle("generate-report", async (event, groupId?: string) => {
+    console.info("[ipc] generate-report called, groupId:", groupId)
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) {
       console.error("[ipc] No window found")
@@ -138,6 +147,7 @@ export function registerIpcHandlers() {
         (status) => win.webContents.send("report-status", status),
         () => win.webContents.send("report-done"),
         (error) => win.webContents.send("report-error", error),
+        groupId,
       )
       return { success: true }
     } catch (err) {
@@ -160,7 +170,22 @@ export function registerIpcHandlers() {
     return getSchedulerStatus()
   })
 
-  ipcMain.handle("get-reports", () => {
+  ipcMain.handle("get-reports", (_event, groupId?: string) => {
+    if (groupId) {
+      return queryAll<{
+        id: string
+        title: string
+        language: string
+        time_range: number
+        entry_count: number
+        type: string
+        group_id: string | null
+        created_at: number
+      }>(
+        "SELECT id, title, language, time_range, entry_count, type, group_id, created_at FROM reports WHERE group_id = ? ORDER BY created_at DESC LIMIT 50",
+        [groupId],
+      )
+    }
     return queryAll<{
       id: string
       title: string
@@ -168,9 +193,10 @@ export function registerIpcHandlers() {
       time_range: number
       entry_count: number
       type: string
+      group_id: string | null
       created_at: number
     }>(
-      "SELECT id, title, language, time_range, entry_count, type, created_at FROM reports ORDER BY created_at DESC LIMIT 50",
+      "SELECT id, title, language, time_range, entry_count, type, group_id, created_at FROM reports ORDER BY created_at DESC LIMIT 50",
     )
   })
 
@@ -494,10 +520,18 @@ export function registerIpcHandlers() {
         pipeline_schedule?: string | null
       },
     ) => {
+      const allowedKeys = new Set([
+        "name",
+        "language",
+        "report_style",
+        "interests",
+        "time_range",
+        "pipeline_schedule",
+      ])
       const fields: string[] = []
       const values: any[] = []
       for (const [key, value] of Object.entries(updates)) {
-        if (value !== undefined) {
+        if (value !== undefined && allowedKeys.has(key)) {
           fields.push(`${key} = ?`)
           values.push(value)
         }
@@ -505,12 +539,17 @@ export function registerIpcHandlers() {
       if (fields.length > 0) {
         values.push(groupId)
         execute(`UPDATE feed_groups SET ${fields.join(", ")} WHERE id = ?`, values)
+        // Restart scheduler if pipeline_schedule was updated
+        if (updates.pipeline_schedule !== undefined) {
+          startPipelineScheduler()
+        }
       }
     },
   )
 
   ipcMain.handle("delete-feed-group", async (_event, groupId: string) => {
     execute(`DELETE FROM feed_group_feeds WHERE group_id = ?`, [groupId])
+    execute(`UPDATE reports SET group_id = NULL WHERE group_id = ?`, [groupId])
     execute(`DELETE FROM feed_groups WHERE id = ?`, [groupId])
   })
 

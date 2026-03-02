@@ -25,7 +25,7 @@ interface EntryState {
   setSelectedEntry: (entry: Entry | null) => void
   setLoading: (loading: boolean) => void
 
-  loadEntries: (feedId?: string) => Promise<void>
+  loadEntries: (feedId?: string, groupId?: string) => Promise<void>
   loadEntry: (entryId: string) => Promise<void>
   markAsRead: (entryId: string) => Promise<void>
 }
@@ -41,9 +41,9 @@ export const useEntryStore = create<EntryState>((set, _get) => ({
   setSelectedEntry: (entry) => set({ selectedEntry: entry }),
   setLoading: (loading) => set({ loading }),
 
-  loadEntries: async (feedId?: string) => {
+  loadEntries: async (feedId?: string, groupId?: string) => {
     set({ loading: true })
-    const entries = await window.api.getEntries(feedId)
+    const entries = await window.api.getEntries(feedId, groupId)
     set({ entries, loading: false })
   },
 

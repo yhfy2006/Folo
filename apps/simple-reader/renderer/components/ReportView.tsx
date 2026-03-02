@@ -2,9 +2,11 @@ import { marked } from "marked"
 import * as React from "react"
 import { useCallback, useEffect, useRef } from "react"
 
+import { useGroupStore } from "../stores/group-store"
 import { useReportStore } from "../stores/report-store"
 
 export function ReportView() {
+  const { selectedGroupId } = useGroupStore()
   const {
     generating,
     status,
@@ -50,10 +52,13 @@ export function ReportView() {
 
   // Listen for scheduled auto-trigger from main process
   useEffect(() => {
-    const cleanup = window.api.onPipelineAutoTrigger(() => {
+    const cleanup = window.api.onPipelineAutoTrigger((groupId?: string) => {
       if (!pipelineRunning) {
-        console.info("[auto-trigger] Scheduled pipeline triggered")
-        startPipeline()
+        console.info(
+          "[auto-trigger] Scheduled pipeline triggered",
+          groupId ? `for group ${groupId}` : "",
+        )
+        startPipeline(groupId)
       }
     })
     return cleanup
@@ -76,8 +81,8 @@ export function ReportView() {
 
   const handleRegenerate = useCallback(() => {
     reset()
-    startReport()
-  }, [reset, startReport])
+    startReport(selectedGroupId || undefined)
+  }, [reset, startReport, selectedGroupId])
 
   const handleConvertToPodcast = useCallback(() => {
     if (!content) return
@@ -295,7 +300,7 @@ export function ReportView() {
           )}
           {!generating && !content && (
             <button
-              onClick={startReport}
+              onClick={() => startReport(selectedGroupId || undefined)}
               className="rounded bg-[color:var(--accent-color)] px-3 py-1 text-xs text-white hover:opacity-90"
             >
               Generate Report
@@ -363,9 +368,10 @@ export function ReportView() {
           !pipelineResult &&
           !pipelineError && (
             <ReportHistory
-              onGenerate={startReport}
-              onStartPipeline={startPipeline}
+              onGenerate={() => startReport(selectedGroupId || undefined)}
+              onStartPipeline={() => startPipeline(selectedGroupId || undefined)}
               onStartVideoOnly={useReportStore.getState().startVideoOnly}
+              groupId={selectedGroupId}
             />
           )}
 
@@ -407,6 +413,7 @@ interface SavedReport {
   time_range: number
   entry_count: number
   type: string
+  group_id: string | null
   created_at: number
 }
 
@@ -414,21 +421,23 @@ function ReportHistory({
   onGenerate,
   onStartPipeline,
   onStartVideoOnly,
+  groupId,
 }: {
   onGenerate: () => void
   onStartPipeline: () => void
   onStartVideoOnly: () => void
+  groupId?: string | null
 }) {
   const [reports, setReports] = React.useState<SavedReport[]>([])
   const [loaded, setLoaded] = React.useState(false)
   const { setContent, setPodcastContent, setShowPodcast } = useReportStore()
 
   React.useEffect(() => {
-    window.api.getReports().then((r: SavedReport[]) => {
+    window.api.getReports(groupId || undefined).then((r: SavedReport[]) => {
       setReports(r)
       setLoaded(true)
     })
-  }, [])
+  }, [groupId])
 
   const handleView = async (reportId: string, type: string) => {
     const report = await window.api.getReport(reportId)
