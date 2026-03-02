@@ -5,27 +5,13 @@ import os from "node:os"
 import { app } from "electron"
 import path from "pathe"
 
-import type { Entry } from "./database"
-import { execute, queryAll } from "./database"
+import type { Entry, FeedGroup } from "./database"
+import { execute, queryAll, queryOne } from "./database"
 import type { UserPreferences } from "./preferences"
 import { loadPreferences } from "./preferences"
 import { fetchArticleContent } from "./readability"
+import { formatSkillsPrompt, loadAllSkills } from "./skills"
 import { getWorkspacePath } from "./workspace"
-
-/**
- * Read a skill file from the workspace and return its content (without frontmatter).
- */
-function readSkill(skillName: string): string {
-  const skillPath = path.join(getWorkspacePath(), ".claude", "skills", `${skillName}.md`)
-  try {
-    const content = fs.readFileSync(skillPath, "utf-8")
-    // Strip YAML frontmatter
-    return content.replace(/^---[\s\S]*?---\n*/, "").trim()
-  } catch {
-    console.warn("[ai-report] Could not read skill:", skillName)
-    return ""
-  }
-}
 
 // Resolve the full path to claude CLI since Electron GUI apps
 // don't inherit the shell PATH on macOS
@@ -51,27 +37,57 @@ export async function generateReport(
   onStatus: (status: string) => void,
   onDone: () => void,
   onError: (error: string) => void,
+  groupId?: string,
 ): Promise<void> {
   const prefs = loadPreferences()
   console.info("[ai-report] Preferences:", JSON.stringify(prefs))
 
+  // Resolve group-specific config
+  const effectivePrefs = { ...prefs }
+  let groupName: string | undefined
+  if (groupId) {
+    const group = queryOne<FeedGroup>(`SELECT * FROM feed_groups WHERE id = ?`, [groupId])
+    if (group) {
+      groupName = group.name
+      if (group.language) effectivePrefs.language = group.language
+      if (group.report_style) effectivePrefs.reportStyle = group.report_style as any
+      if (group.interests) effectivePrefs.interests = JSON.parse(group.interests)
+      if (group.time_range) effectivePrefs.timeRange = group.time_range
+    }
+  }
+
   // Query entries within the time range
-  const cutoffMs = Date.now() - prefs.timeRange * 60 * 60 * 1000
+  const cutoffMs = Date.now() - effectivePrefs.timeRange * 60 * 60 * 1000
   const cutoffSec = Math.floor(cutoffMs / 1000)
   console.info("[ai-report] Cutoff timestamp:", cutoffSec, `(${new Date(cutoffMs).toISOString()})`)
 
-  const entries = queryAll<EntryWithFeed>(
-    `SELECT e.*, f.title as feed_title, f.category as feed_category
-     FROM entries e
-     LEFT JOIN feeds f ON e.feed_id = f.id
-     WHERE (e.published_at > ? OR e.inserted_at > ?)
-       AND e.id NOT IN (SELECT entry_id FROM report_entries)
-     ORDER BY e.published_at DESC`,
-    [cutoffSec, cutoffSec],
-  )
+  let entries: EntryWithFeed[]
+  if (groupId) {
+    entries = queryAll<EntryWithFeed>(
+      `SELECT e.*, f.title as feed_title, f.category as feed_category
+       FROM entries e
+       LEFT JOIN feeds f ON e.feed_id = f.id
+       INNER JOIN feed_group_feeds gf ON f.id = gf.feed_id
+       WHERE gf.group_id = ?
+         AND (e.published_at > ? OR e.inserted_at > ?)
+         AND e.id NOT IN (SELECT entry_id FROM report_entries)
+       ORDER BY e.published_at DESC`,
+      [groupId, cutoffSec, cutoffSec],
+    )
+  } else {
+    entries = queryAll<EntryWithFeed>(
+      `SELECT e.*, f.title as feed_title, f.category as feed_category
+       FROM entries e
+       LEFT JOIN feeds f ON e.feed_id = f.id
+       WHERE (e.published_at > ? OR e.inserted_at > ?)
+         AND e.id NOT IN (SELECT entry_id FROM report_entries)
+       ORDER BY e.published_at DESC`,
+      [cutoffSec, cutoffSec],
+    )
+  }
 
   if (entries.length === 0) {
-    onChunk(`No entries found in the last ${prefs.timeRange} hours.`)
+    onChunk(`No entries found in the last ${effectivePrefs.timeRange} hours.`)
     onDone()
     return
   }
@@ -87,10 +103,12 @@ export async function generateReport(
     )
   }
 
-  onStatus(`Screening ${entriesToScreen.length} entries from the last ${prefs.timeRange}h...`)
+  onStatus(
+    `Screening ${entriesToScreen.length} entries from the last ${effectivePrefs.timeRange}h...`,
+  )
 
   // Stage 1: Screening - use the "screening" skill
-  const screeningPrompt = buildScreeningPrompt(entriesToScreen, prefs)
+  const screeningPrompt = buildScreeningPrompt(entriesToScreen, effectivePrefs)
   console.info("[ai-report] Screening prompt length:", screeningPrompt.length, "chars")
   let screeningResult: string
 
@@ -130,7 +148,7 @@ export async function generateReport(
 
   // Stage 3: Generate final report with streaming - use the "daily-report" skill
   onStatus(`Generating report from ${enrichedEntries.length} articles...`)
-  const reportPrompt = buildReportPrompt(enrichedEntries, prefs)
+  const reportPrompt = buildReportPrompt(enrichedEntries, effectivePrefs)
   console.info("[ai-report] Report prompt length:", reportPrompt.length, "chars")
 
   let fullContent = ""
@@ -143,17 +161,18 @@ export async function generateReport(
     // Save report to database
     const reportId = Math.random().toString(36).slice(2) + Date.now().toString(36)
     const now = Math.floor(Date.now() / 1000)
-    const title = generateReportTitle(prefs)
+    const title = generateReportTitle(effectivePrefs, groupName)
     execute(
-      "INSERT INTO reports (id, title, content, language, time_range, entry_count, type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO reports (id, title, content, language, time_range, entry_count, type, group_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [
         reportId,
         title,
         fullContent,
-        prefs.language,
-        prefs.timeRange,
+        effectivePrefs.language,
+        effectivePrefs.timeRange,
         enrichedEntries.length,
         "report",
+        groupId || null,
         now,
       ],
     )
@@ -179,12 +198,13 @@ export async function generateReport(
   }
 }
 
-function generateReportTitle(_prefs: UserPreferences): string {
+function generateReportTitle(_prefs: UserPreferences, groupName?: string): string {
   const now = new Date()
   const date = now.toLocaleDateString("en-CA") // YYYY-MM-DD
   const hour = now.getHours()
   const period = hour < 12 ? "Morning" : hour < 18 ? "Afternoon" : "Evening"
-  return `${period} Report - ${date}`
+  const prefix = groupName ? `${groupName} ` : ""
+  return `${prefix}${period} Report - ${date}`
 }
 
 function buildScreeningPrompt(entries: EntryWithFeed[], prefs: UserPreferences): string {
@@ -198,9 +218,11 @@ function buildScreeningPrompt(entries: EntryWithFeed[], prefs: UserPreferences):
   const interestsStr =
     prefs.interests.length > 0 ? `User interests: ${prefs.interests.join(", ")}` : ""
 
-  const skillContent = readSkill("screening")
+  const skillsSection = formatSkillsPrompt(loadAllSkills())
 
-  return `${skillContent}
+  return `${skillsSection}
+
+Your task: Screen RSS entries and select valuable ones.
 
 ${interestsStr}
 
@@ -267,9 +289,11 @@ ${typeof content === "string" ? stripHtml(content) : content}
       ? `User interests: ${prefs.interests.join(", ")}. Prioritize these topics.`
       : ""
 
-  const skillContent = readSkill("daily-report")
+  const skillsSection = formatSkillsPrompt(loadAllSkills())
 
-  return `${skillContent}
+  return `${skillsSection}
+
+Your task: Generate a daily briefing report from the curated articles below.
 
 ${langInstruction}
 ${styleInstruction}
@@ -294,7 +318,7 @@ function getLanguageInstruction(lang: string): string {
   return langMap[lang] || `Language: ${lang}`
 }
 
-export function runClaude(prompt: string): Promise<string> {
+export function runClaude(prompt: string, extraArgs?: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const claudePath = getClaudePath()
     const workspacePath = getWorkspacePath()
@@ -307,7 +331,8 @@ export function runClaude(prompt: string): Promise<string> {
     }
     delete env.CLAUDECODE
 
-    const proc = spawn(claudePath, ["-p"], {
+    const args = ["-p", "--dangerously-skip-permissions", ...(extraArgs || [])]
+    const proc = spawn(claudePath, args, {
       stdio: ["pipe", "pipe", "pipe"],
       env,
       cwd: workspacePath,
@@ -348,7 +373,11 @@ export function runClaude(prompt: string): Promise<string> {
   })
 }
 
-function runClaudeStreaming(prompt: string, onChunk: (text: string) => void): Promise<void> {
+function runClaudeStreaming(
+  prompt: string,
+  onChunk: (text: string) => void,
+  extraArgs?: string[],
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const claudePath = getClaudePath()
     const workspacePath = getWorkspacePath()
@@ -361,7 +390,8 @@ function runClaudeStreaming(prompt: string, onChunk: (text: string) => void): Pr
     }
     delete env.CLAUDECODE
 
-    const proc = spawn(claudePath, ["-p"], {
+    const args = ["-p", "--dangerously-skip-permissions", ...(extraArgs || [])]
+    const proc = spawn(claudePath, args, {
       stdio: ["pipe", "pipe", "pipe"],
       env,
       cwd: workspacePath,
@@ -431,7 +461,7 @@ export async function generatePodcastScript(
   const prefs = loadPreferences()
   onStatus("Converting report to podcast script...")
 
-  const skillContent = readSkill("podcast-script")
+  const skillsSection = formatSkillsPrompt(loadAllSkills())
 
   // Read the methodology file for additional context
   let methodology = ""
@@ -451,7 +481,9 @@ export async function generatePodcastScript(
   const now = new Date()
   const spokenDate = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`
 
-  const prompt = `${skillContent}
+  const prompt = `${skillsSection}
+
+Your task: Convert the following daily briefing report into a podcast broadcast script (口播文案).
 
 ${methodology ? `## Reference Methodology\n\n${methodology}\n\n` : ""}${langInstruction}
 
@@ -504,7 +536,10 @@ IMPORTANT: Output ONLY the podcast script as plain spoken text. No markdown form
 /**
  * Promise-based wrapper: generates report and returns the full content as a string.
  */
-export async function generateReportToString(onStatus: (status: string) => void): Promise<string> {
+export async function generateReportToString(
+  onStatus: (status: string) => void,
+  groupId?: string,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     let fullContent = ""
     generateReport(
@@ -514,6 +549,7 @@ export async function generateReportToString(onStatus: (status: string) => void)
       onStatus,
       () => resolve(fullContent),
       (error) => reject(new Error(error)),
+      groupId,
     ).catch(reject)
   })
 }
