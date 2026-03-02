@@ -35,6 +35,17 @@ export interface Entry {
   read: number
 }
 
+export interface FeedGroup {
+  id: string
+  name: string
+  language: string | null
+  report_style: string | null
+  interests: string | null // JSON array string
+  time_range: number | null
+  pipeline_schedule: string | null
+  created_at: number
+}
+
 // Database singleton
 let db: SqlJsDatabase | null = null
 let dbPath = ""
@@ -107,11 +118,35 @@ export async function initDatabase() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_report_entries_entry_id ON report_entries(entry_id);
+
+    CREATE TABLE IF NOT EXISTS feed_groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      language TEXT,
+      report_style TEXT,
+      interests TEXT,
+      time_range INTEGER,
+      pipeline_schedule TEXT,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS feed_group_feeds (
+      group_id TEXT NOT NULL REFERENCES feed_groups(id),
+      feed_id TEXT NOT NULL REFERENCES feeds(id),
+      PRIMARY KEY (group_id, feed_id)
+    );
   `)
 
   // Migrate: add type column if missing
   try {
     db.run("ALTER TABLE reports ADD COLUMN type TEXT NOT NULL DEFAULT 'report'")
+  } catch {
+    // Column already exists
+  }
+
+  // Migration: add group_id to reports
+  try {
+    db.run(`ALTER TABLE reports ADD COLUMN group_id TEXT`)
   } catch {
     // Column already exists
   }

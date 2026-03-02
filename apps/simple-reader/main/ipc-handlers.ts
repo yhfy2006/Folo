@@ -1,9 +1,10 @@
 import fs from "node:fs"
 
 import { BrowserWindow, dialog, ipcMain } from "electron"
+import path from "pathe"
 
 import { generatePodcastScript, generateReport } from "./ai-report"
-import type { Entry, Feed } from "./database"
+import type { Entry, Feed, FeedGroup } from "./database"
 import { execute, queryAll, queryOne, saveDatabase } from "./database"
 import { parseOPML } from "./opml-parser"
 import { getSchedulerStatus, startPipelineScheduler } from "./pipeline-scheduler"
@@ -20,33 +21,48 @@ export function registerIpcHandlers() {
     })
 
     if (result.canceled || result.filePaths.length === 0) {
-      return { success: false, message: "Cancelled" }
+      return null
     }
 
     const filePath = result.filePaths[0]!
     const content = fs.readFileSync(filePath, "utf-8")
     const feeds = parseOPML(content)
 
-    let importedCount = 0
+    if (feeds.length === 0) return null
+
+    // Derive default group name from filename
+    const fileName = path.basename(filePath, path.extname(filePath))
+
+    const feedIds: string[] = []
     for (const feed of feeds) {
       const id = generateId()
-      try {
-        execute(
-          "INSERT OR IGNORE INTO feeds (id, title, url, site_url, category) VALUES (?, ?, ?, ?, ?)",
-          [id, feed.title, feed.xmlUrl, feed.htmlUrl || null, feed.category || null],
-        )
-        importedCount++
-      } catch {
-        // Skip duplicates
-      }
+      execute(
+        "INSERT OR IGNORE INTO feeds (id, title, url, site_url, category) VALUES (?, ?, ?, ?, ?)",
+        [id, feed.title, feed.xmlUrl, feed.htmlUrl || null, feed.category || null],
+      )
+      // Get the actual id (might already exist due to OR IGNORE)
+      const existing = queryOne<{ id: string }>(`SELECT id FROM feeds WHERE url = ?`, [feed.xmlUrl])
+      if (existing) feedIds.push(existing.id)
     }
 
-    saveDatabase()
+    // Create feed group
+    const groupId = generateId()
+    execute(`INSERT INTO feed_groups (id, name, created_at) VALUES (?, ?, ?)`, [
+      groupId,
+      fileName,
+      Date.now(),
+    ])
 
-    // Trigger initial fetch
-    refreshAllFeeds()
+    // Link feeds to group
+    for (const feedId of feedIds) {
+      execute(`INSERT OR IGNORE INTO feed_group_feeds (group_id, feed_id) VALUES (?, ?)`, [
+        groupId,
+        feedId,
+      ])
+    }
 
-    return { success: true, count: importedCount }
+    await refreshAllFeeds()
+    return { groupId, groupName: fileName, feedCount: feedIds.length }
   })
 
   ipcMain.handle("get-feeds", () => {
@@ -439,6 +455,83 @@ export function registerIpcHandlers() {
       console.error("[youtube] Connection check failed:", err)
       return { success: false, connected: false, error: String(err) }
     }
+  })
+
+  // --- Feed Groups ---
+
+  ipcMain.handle("get-feed-groups", async () => {
+    return queryAll<FeedGroup>(`SELECT * FROM feed_groups ORDER BY created_at DESC`)
+  })
+
+  ipcMain.handle("get-feed-group", async (_event, groupId: string) => {
+    return queryOne<FeedGroup>(`SELECT * FROM feed_groups WHERE id = ?`, [groupId])
+  })
+
+  ipcMain.handle("create-feed-group", async (_event, name: string) => {
+    const id = generateId()
+    execute(`INSERT INTO feed_groups (id, name, created_at) VALUES (?, ?, ?)`, [
+      id,
+      name,
+      Date.now(),
+    ])
+    return id
+  })
+
+  ipcMain.handle(
+    "update-feed-group",
+    async (
+      _event,
+      groupId: string,
+      updates: {
+        name?: string
+        language?: string | null
+        report_style?: string | null
+        interests?: string | null
+        time_range?: number | null
+        pipeline_schedule?: string | null
+      },
+    ) => {
+      const fields: string[] = []
+      const values: any[] = []
+      for (const [key, value] of Object.entries(updates)) {
+        if (value !== undefined) {
+          fields.push(`${key} = ?`)
+          values.push(value)
+        }
+      }
+      if (fields.length > 0) {
+        values.push(groupId)
+        execute(`UPDATE feed_groups SET ${fields.join(", ")} WHERE id = ?`, values)
+      }
+    },
+  )
+
+  ipcMain.handle("delete-feed-group", async (_event, groupId: string) => {
+    execute(`DELETE FROM feed_group_feeds WHERE group_id = ?`, [groupId])
+    execute(`DELETE FROM feed_groups WHERE id = ?`, [groupId])
+  })
+
+  ipcMain.handle("get-group-feeds", async (_event, groupId: string) => {
+    return queryAll<Feed>(
+      `SELECT f.* FROM feeds f
+       INNER JOIN feed_group_feeds gf ON f.id = gf.feed_id
+       WHERE gf.group_id = ?
+       ORDER BY f.category, f.title`,
+      [groupId],
+    )
+  })
+
+  ipcMain.handle("add-feeds-to-group", async (_event, groupId: string, feedIds: string[]) => {
+    for (const feedId of feedIds) {
+      execute(`INSERT OR IGNORE INTO feed_group_feeds (group_id, feed_id) VALUES (?, ?)`, [
+        groupId,
+        feedId,
+      ])
+    }
+  })
+
+  ipcMain.handle("remove-feed-from-group", async (_event, groupId: string, feedId: string) => {
+    execute(`DELETE FROM feed_group_feeds WHERE group_id = ? AND feed_id = ?`, [groupId, feedId])
   })
 }
 

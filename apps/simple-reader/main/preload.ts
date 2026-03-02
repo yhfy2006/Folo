@@ -10,6 +10,19 @@ const api = {
   deleteFeed: (feedId: string) => ipcRenderer.invoke("delete-feed", feedId),
   addFeed: (url: string, title?: string) => ipcRenderer.invoke("add-feed", url, title),
   getUnreadCounts: () => ipcRenderer.invoke("get-unread-counts"),
+
+  // Feed Groups
+  getFeedGroups: () => ipcRenderer.invoke("get-feed-groups"),
+  getFeedGroup: (groupId: string) => ipcRenderer.invoke("get-feed-group", groupId),
+  createFeedGroup: (name: string) => ipcRenderer.invoke("create-feed-group", name),
+  updateFeedGroup: (groupId: string, updates: any) =>
+    ipcRenderer.invoke("update-feed-group", groupId, updates),
+  deleteFeedGroup: (groupId: string) => ipcRenderer.invoke("delete-feed-group", groupId),
+  getGroupFeeds: (groupId: string) => ipcRenderer.invoke("get-group-feeds", groupId),
+  addFeedsToGroup: (groupId: string, feedIds: string[]) =>
+    ipcRenderer.invoke("add-feeds-to-group", groupId, feedIds),
+  removeFeedFromGroup: (groupId: string, feedId: string) =>
+    ipcRenderer.invoke("remove-feed-from-group", groupId, feedId),
   onFeedsUpdated: (callback: () => void) => {
     ipcRenderer.on("feeds-updated", callback)
     return () => ipcRenderer.removeListener("feeds-updated", callback)
