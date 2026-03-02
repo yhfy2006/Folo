@@ -143,9 +143,10 @@ const api = {
     ipcRenderer.on("pipeline-error", handler)
     return () => ipcRenderer.removeListener("pipeline-error", handler)
   },
-  onPipelineAutoTrigger: (callback: () => void) => {
-    ipcRenderer.on("pipeline-auto-trigger", callback)
-    return () => ipcRenderer.removeListener("pipeline-auto-trigger", callback)
+  onPipelineAutoTrigger: (callback: (groupId?: string) => void) => {
+    const handler = (_event: any, groupId?: string) => callback(groupId)
+    ipcRenderer.on("pipeline-auto-trigger", handler)
+    return () => ipcRenderer.removeListener("pipeline-auto-trigger", handler)
   },
 
   // Scheduler

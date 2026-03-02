@@ -1,33 +1,50 @@
 import { BrowserWindow } from "electron"
 
+import type { FeedGroup } from "./database"
+import { queryAll } from "./database"
 import { loadPreferences } from "./preferences"
 
-let timerId: ReturnType<typeof setTimeout> | null = null
-let lastRunDate: string | null = null
+// Track timers: groupId -> timerId (null key = global)
+const timers = new Map<string | null, ReturnType<typeof setTimeout>>()
+const lastRunDates = new Map<string | null, string>()
 
 /**
  * Start (or restart) the pipeline scheduler.
- * Calculates the ms until the next scheduled time and sets a timeout.
+ * Manages independent timers for the global schedule and per-group schedules.
  * Should be called on app start and whenever preferences change.
  */
 export function startPipelineScheduler(): void {
-  stopPipelineScheduler()
+  // Clear all existing timers
+  for (const [, timerId] of timers) {
+    clearTimeout(timerId)
+  }
+  timers.clear()
 
+  // Schedule global pipeline
   const prefs = loadPreferences()
   const schedule = prefs.pipelineSchedule?.trim()
-  if (!schedule || !/^\d{2}:\d{2}$/.test(schedule)) {
-    console.info("[pipeline-scheduler] No schedule configured, idle")
-    return
+  if (schedule && /^\d{2}:\d{2}$/.test(schedule)) {
+    scheduleNext(schedule, null)
+  } else {
+    console.info("[pipeline-scheduler] No global schedule configured, idle")
   }
 
-  scheduleNext(schedule)
+  // Schedule per-group pipelines
+  const groups = queryAll<FeedGroup>(
+    `SELECT * FROM feed_groups WHERE pipeline_schedule IS NOT NULL`,
+  )
+  for (const group of groups) {
+    if (group.pipeline_schedule && /^\d{2}:\d{2}$/.test(group.pipeline_schedule)) {
+      scheduleNext(group.pipeline_schedule, group.id)
+    }
+  }
 }
 
 export function stopPipelineScheduler(): void {
-  if (timerId) {
+  for (const [, timerId] of timers) {
     clearTimeout(timerId)
-    timerId = null
   }
+  timers.clear()
 }
 
 export function getSchedulerStatus(): {
@@ -47,20 +64,22 @@ export function getSchedulerStatus(): {
     nextRun = nextDate.toISOString()
   }
 
-  return { enabled, schedule, nextRun, lastRunDate }
+  return { enabled, schedule, nextRun, lastRunDate: lastRunDates.get(null) || null }
 }
 
-function scheduleNext(schedule: string): void {
+function scheduleNext(schedule: string, groupId: string | null): void {
   const ms = msUntilNext(schedule)
   const nextDate = new Date(Date.now() + ms)
+  const label = groupId ? `group:${groupId}` : "global"
   console.info(
-    `[pipeline-scheduler] Next run at ${nextDate.toLocaleString()} (in ${Math.round(ms / 60000)} min)`,
+    `[pipeline-scheduler] ${label} next run at ${nextDate.toLocaleString()} (in ${Math.round(ms / 60000)} min)`,
   )
 
-  timerId = setTimeout(() => {
-    timerId = null
-    triggerPipeline(schedule)
+  const timerId = setTimeout(() => {
+    timers.delete(groupId)
+    triggerPipeline(schedule, groupId)
   }, ms)
+  timers.set(groupId, timerId)
 }
 
 function msUntilNext(schedule: string): number {
@@ -77,29 +96,31 @@ function msUntilNext(schedule: string): number {
   return target.getTime() - now.getTime()
 }
 
-async function triggerPipeline(schedule: string): Promise<void> {
+async function triggerPipeline(schedule: string, groupId: string | null): Promise<void> {
   const today = new Date().toISOString().slice(0, 10)
 
   // Prevent duplicate runs on the same day
-  if (lastRunDate === today) {
-    console.info("[pipeline-scheduler] Already ran today, skipping")
-    scheduleNext(schedule)
+  if (lastRunDates.get(groupId) === today) {
+    const label = groupId ? `group:${groupId}` : "global"
+    console.info(`[pipeline-scheduler] ${label} already ran today, skipping`)
+    scheduleNext(schedule, groupId)
     return
   }
 
   const win = BrowserWindow.getAllWindows()[0]
   if (!win) {
     console.warn("[pipeline-scheduler] No window available, skipping")
-    scheduleNext(schedule)
+    scheduleNext(schedule, groupId)
     return
   }
 
-  console.info("[pipeline-scheduler] Triggering pipeline...")
-  lastRunDate = today
+  const label = groupId ? `group:${groupId}` : "global"
+  console.info(`[pipeline-scheduler] Triggering pipeline for ${label}...`)
+  lastRunDates.set(groupId, today)
 
-  // Notify renderer to start the pipeline (same as clicking the button)
-  win.webContents.send("pipeline-auto-trigger")
+  // Notify renderer to start the pipeline with optional groupId
+  win.webContents.send("pipeline-auto-trigger", groupId)
 
   // Schedule next run
-  scheduleNext(schedule)
+  scheduleNext(schedule, groupId)
 }
