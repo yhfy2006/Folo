@@ -985,9 +985,9 @@ async function main() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: RESEND_FROM || 'YOMOO 每日AI快送 <daily@yomoo.com>',
+          from: RESEND_FROM || 'Yomoo 每日AI快送 <daily@yomoo.com>',
           to: email,
-          subject: 'YOMOO 每日AI快送 — ' + EPISODE_DATE,
+          subject: 'Yomoo 每日AI快送 — ' + EPISODE_DATE,
           html: html,
         }),
       });

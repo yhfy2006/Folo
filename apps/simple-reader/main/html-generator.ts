@@ -1,6 +1,39 @@
 import { marked } from "marked"
 
 /**
+ * Post-process HTML to inline all styles on tags.
+ * This avoids reliance on <style> blocks which some email clients strip,
+ * and reduces SpamAssassin "HTML obfuscation" score.
+ */
+function inlineEmailStyles(html: string): string {
+  const tagStyles: Record<string, string> = {
+    p: "margin: 0 0 16px 0; font-size: 15px; line-height: 1.85; color: #3d3529;",
+    h1: "font-size: 24px; font-weight: 800; color: #1a1410; line-height: 1.35; margin-top: 24px; margin-bottom: 12px;",
+    h2: "font-size: 20px; font-weight: 700; color: #1a1410; line-height: 1.35; margin-top: 24px; margin-bottom: 12px; border-bottom: 1px solid #e8e2d9; padding-bottom: 8px;",
+    h3: "font-size: 17px; font-weight: 700; color: #1a1410; line-height: 1.35; margin-top: 24px; margin-bottom: 12px;",
+    ul: "margin: 12px 0 16px 20px; padding: 0; font-size: 15px; color: #3d3529;",
+    ol: "margin: 12px 0 16px 20px; padding: 0; font-size: 15px; color: #3d3529;",
+    li: "margin-bottom: 6px; line-height: 1.75;",
+    a: "color: #E8722A; text-decoration: underline;",
+    strong: "color: #1a1410; font-weight: 600;",
+    blockquote:
+      "margin: 16px 0; padding: 12px 16px; border-left: 3px solid #E8722A; background-color: rgba(232,114,42,0.06); font-style: italic; color: #3d3529;",
+    pre: "background-color: #ffffff; border: 1px solid #e8e2d9; border-radius: 6px; padding: 12px; overflow-x: auto; margin: 12px 0;",
+    code: "font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 0.85em; padding: 2px 6px; background-color: #f5efe6; border-radius: 3px; color: #C4561A;",
+    hr: "border: none; height: 1px; background-color: #e8e2d9; margin: 24px 0;",
+    img: "max-width: 100%; height: auto;",
+  }
+
+  let result = html
+  for (const [tag, style] of Object.entries(tagStyles)) {
+    // Match opening tags without existing style attribute
+    const regex = new RegExp(`<${tag}(\\s|>)`, "gi")
+    result = result.replace(regex, `<${tag} style="${style}"$1`)
+  }
+  return result
+}
+
+/**
  * Generate a branded YOMOO HTML page with dual tabs (Report + Podcast).
  * Mobile-first, editorial design with warm amber palette.
  */
@@ -732,16 +765,78 @@ export function generateHtmlPage(
 }
 
 /**
+ * Validate links in rendered HTML by sending HEAD requests.
+ * Removes <a> tags for links returning 4xx/5xx errors (keeps link text).
+ */
+async function validateLinks(html: string): Promise<string> {
+  const linkRegex = /<a\s[^>]*href="(https?:\/\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi
+  const matches = [...html.matchAll(linkRegex)]
+
+  if (matches.length === 0) return html
+
+  // Deduplicate URLs
+  const uniqueUrls = [...new Set(matches.map((m) => m[1]!))]
+
+  // Check each URL with HEAD request (5s timeout)
+  const deadUrls = new Set<string>()
+
+  await Promise.all(
+    uniqueUrls.map(async (url) => {
+      // Skip placeholder URLs
+      if (url.includes("{{") || url.includes("}}")) return
+      try {
+        const controller = new AbortController()
+        const timeout = setTimeout(() => controller.abort(), 5000)
+        const resp = await fetch(url, {
+          method: "HEAD",
+          signal: controller.signal,
+          redirect: "follow",
+        })
+        clearTimeout(timeout)
+        if (resp.status >= 400) {
+          deadUrls.add(url)
+        }
+      } catch {
+        // Network error or timeout — treat as dead link
+        deadUrls.add(url)
+      }
+    }),
+  )
+
+  if (deadUrls.size === 0) return html
+
+  // Strip <a> tags for dead links, keeping the link text
+  let result = html
+  for (const deadUrl of deadUrls) {
+    const escapedUrl = deadUrl.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const deadLinkRegex = new RegExp(
+      `<a\\s+[^>]*href="${escapedUrl}"[^>]*>([\\s\\S]*?)<\\/a>`,
+      "gi",
+    )
+    result = result.replace(deadLinkRegex, "$1")
+  }
+
+  console.info(`[validateLinks] Removed ${deadUrls.size} dead link(s):`, [...deadUrls])
+  return result
+}
+
+/**
  * Generate an email-safe HTML version of the YOMOO daily report.
  * No JavaScript, no tabs, table-based layout for email client compatibility.
  * Contains {{UNSUBSCRIBE_URL}} placeholder to be replaced per subscriber.
  */
-export function generateEmailHtml(
+export async function generateEmailHtml(
   reportMarkdown: string,
   audioUrl: string | null,
   date: string,
-): string {
-  const renderedReport = marked.parse(reportMarkdown, { async: false, breaks: true }) as string
+): Promise<string> {
+  let renderedReport = marked.parse(reportMarkdown, { async: false, breaks: true }) as string
+
+  // Inline styles on HTML tags for email client compatibility
+  renderedReport = inlineEmailStyles(renderedReport)
+
+  // Validate links and remove dead ones
+  renderedReport = await validateLinks(renderedReport)
 
   const episodePageUrl = `https://daily.yomoo.net/episodes/${encodeURIComponent(date)}/index.html`
   const audioBlock = audioUrl
@@ -751,8 +846,8 @@ export function generateEmailHtml(
             <tr>
               <td style="padding: 14px 16px; text-align: center;">
                 <a href="${escapeHtml(episodePageUrl)}" style="color: #E8722A; text-decoration: none; font-size: 14px; font-weight: 600;">&#9654; 在线收听播客</a>
-                <span style="color: #c9bfb0; margin: 0 8px;">|</span>
-                <a href="${escapeHtml(audioUrl)}" style="color: #9a8e7f; text-decoration: none; font-size: 14px;">下载 MP3</a>
+                <span style="color: #8a7e6e; margin: 0 8px;">|</span>
+                <a href="${escapeHtml(audioUrl)}" style="color: #6b5e4f; text-decoration: none; font-size: 14px;">下载 MP3</a>
               </td>
             </tr>
           </table>
@@ -765,7 +860,7 @@ export function generateEmailHtml(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>YOMOO 每日AI快送 — ${escapeHtml(date)}</title>
+  <title>Yomoo 每日AI快送 — ${escapeHtml(date)}</title>
   <!--[if mso]>
   <noscript>
     <xml>
@@ -775,92 +870,6 @@ export function generateEmailHtml(
     </xml>
   </noscript>
   <![endif]-->
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background-color: #fffbf5;
-      color: #3d3529;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      font-size: 16px;
-      line-height: 1.8;
-      -webkit-text-size-adjust: 100%;
-      -ms-text-size-adjust: 100%;
-    }
-    h1, h2, h3, h4, h5, h6 {
-      color: #1a1410;
-      line-height: 1.35;
-      margin-top: 24px;
-      margin-bottom: 12px;
-    }
-    h1 { font-size: 24px; font-weight: 800; }
-    h2 { font-size: 20px; font-weight: 700; border-bottom: 1px solid #e8e2d9; padding-bottom: 8px; }
-    h3 { font-size: 17px; font-weight: 700; }
-    p {
-      margin: 0 0 16px 0;
-      font-size: 15px;
-      line-height: 1.85;
-      color: #3d3529;
-    }
-    ul, ol {
-      margin: 12px 0 16px 20px;
-      padding: 0;
-      font-size: 15px;
-      color: #3d3529;
-    }
-    li {
-      margin-bottom: 6px;
-      line-height: 1.75;
-    }
-    blockquote {
-      margin: 16px 0;
-      padding: 12px 16px;
-      border-left: 3px solid #E8722A;
-      background-color: rgba(232,114,42,0.06);
-      font-style: italic;
-      color: #3d3529;
-    }
-    blockquote p:last-child { margin-bottom: 0; }
-    code {
-      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
-      font-size: 0.85em;
-      padding: 2px 6px;
-      background-color: #f5efe6;
-      border-radius: 3px;
-      color: #C4561A;
-    }
-    pre {
-      background-color: #ffffff;
-      border: 1px solid #e8e2d9;
-      border-radius: 6px;
-      padding: 12px;
-      overflow-x: auto;
-      margin: 12px 0;
-    }
-    pre code {
-      background: none;
-      padding: 0;
-      color: #3d3529;
-    }
-    a {
-      color: #E8722A;
-      text-decoration: underline;
-    }
-    img {
-      max-width: 100%;
-      height: auto;
-    }
-    hr {
-      border: none;
-      height: 1px;
-      background-color: #e8e2d9;
-      margin: 24px 0;
-    }
-    strong {
-      color: #1a1410;
-      font-weight: 600;
-    }
-  </style>
 </head>
 <body style="margin: 0; padding: 0; background-color: #fffbf5;">
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #fffbf5;">
@@ -877,11 +886,11 @@ export function generateEmailHtml(
               <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center">
                 <tr>
                   <td style="width: 28px; height: 28px; background: linear-gradient(135deg, #E8722A, #D4A053); border-radius: 7px; text-align: center; vertical-align: middle; font-family: Georgia, serif; font-weight: 900; font-size: 15px; color: #ffffff;">Y</td>
-                  <td style="padding-left: 8px; font-family: Georgia, serif; font-size: 17px; font-weight: 800; color: #1a1410;">YOMOO</td>
+                  <td style="padding-left: 8px; font-family: Georgia, serif; font-size: 17px; font-weight: 800; color: #1a1410;">Yomoo</td>
                 </tr>
               </table>
               <h1 style="font-family: Georgia, serif; font-size: 26px; font-weight: 900; color: #1a1410; margin: 16px 0 8px; line-height: 1.2;">每日AI快送</h1>
-              <p style="font-size: 13px; font-weight: 500; color: #8a7e6e; letter-spacing: 0.08em; margin: 0;">${escapeHtml(date)}</p>
+              <p style="font-size: 13px; font-weight: 500; color: #6b5e4f; letter-spacing: 0.08em; margin: 0;">${escapeHtml(date)}</p>
             </td>
           </tr>
           ${audioBlock}
@@ -894,10 +903,10 @@ export function generateEmailHtml(
           <!-- Footer -->
           <tr>
             <td style="padding: 24px 32px; text-align: center; border-top: 1px solid #e8e2d9; background-color: #fffbf5;">
-              <p style="font-size: 12px; font-weight: 500; color: #b5a898; letter-spacing: 0.06em; margin: 0 0 4px;">YOMOO 每日AI快送</p>
-              <p style="font-size: 11px; color: #b5a898; letter-spacing: 0.08em; margin: 0 0 12px;">Powered by YOMOO LLC</p>
-              <p style="font-size: 11px; color: #b5a898; margin: 0;">
-                <a href="{{UNSUBSCRIBE_URL}}" style="color: #8a7e6e; text-decoration: underline;">退订邮件</a>
+              <p style="font-size: 12px; font-weight: 500; color: #6b5e4f; letter-spacing: 0.06em; margin: 0 0 4px;">Yomoo 每日AI快送</p>
+              <p style="font-size: 11px; color: #6b5e4f; letter-spacing: 0.08em; margin: 0 0 12px;">Powered by Yomoo LLC</p>
+              <p style="font-size: 11px; color: #6b5e4f; margin: 0;">
+                <a href="{{UNSUBSCRIBE_URL}}" style="color: #6b5e4f; text-decoration: underline;">退订邮件</a>
               </p>
             </td>
           </tr>

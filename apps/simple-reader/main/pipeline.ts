@@ -236,7 +236,7 @@ export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string
 
     // Commit email-safe HTML (triggers GitHub Action to send newsletter)
     callbacks.onStatus("Committing email version...")
-    const emailHtml = generateEmailHtml(reportContent, audioUrl, date)
+    const emailHtml = await generateEmailHtml(reportContent, audioUrl, date)
     const emailBase64 = Buffer.from(emailHtml).toString("base64")
 
     await commitFile(
