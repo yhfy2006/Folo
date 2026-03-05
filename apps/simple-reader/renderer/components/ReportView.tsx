@@ -536,11 +536,11 @@ function ReportHistory({
                       ` · ${report.entry_count} articles · ${report.time_range}h range`}
                   </div>
                 </div>
-                <span className="flex items-center gap-1">
+                <span className="flex shrink-0 items-center gap-1">
                   {report.type === "report" && (
                     <button
                       onClick={(e) => handlePreview(e, report.id)}
-                      className="hover:bg-[color:var(--accent-color)]/15 hidden rounded px-1.5 py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[color:var(--accent-color)] group-hover:block"
+                      className="rounded border border-[hsl(var(--border))] px-1.5 py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] hover:border-[color:var(--accent-color)] hover:text-[color:var(--accent-color)]"
                       title="Preview HTML page"
                     >
                       Preview
@@ -548,7 +548,7 @@ function ReportHistory({
                   )}
                   <button
                     onClick={(e) => handleDelete(e, report.id)}
-                    className="hidden rounded p-1 text-xs text-[hsl(var(--muted-foreground))] hover:bg-red-500/20 hover:text-red-500 group-hover:block"
+                    className="rounded p-1 text-xs text-[hsl(var(--muted-foreground))] opacity-0 hover:bg-red-500/20 hover:text-red-500 group-hover:opacity-100"
                     title="Delete report"
                   >
                     ×
@@ -575,7 +575,7 @@ function ReportHistory({
           <iframe
             srcDoc={previewHtml}
             className="flex-1 bg-white"
-            sandbox="allow-same-origin"
+            sandbox="allow-same-origin allow-scripts"
             title="Report HTML Preview"
           />
         </div>
