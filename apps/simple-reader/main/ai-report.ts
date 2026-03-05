@@ -861,10 +861,15 @@ IMPORTANT: Output ONLY the podcast script as plain spoken text. No markdown form
 
   let fullContent = ""
   try {
-    await runClaudeStreaming(prompt, (chunk) => {
-      fullContent += chunk
-      onChunk(chunk)
-    })
+    await runClaudeStreaming(
+      prompt,
+      (chunk) => {
+        fullContent += chunk
+        onChunk(chunk)
+      },
+      [],
+      3,
+    )
 
     // Save podcast script to database
     const scriptId = Math.random().toString(36).slice(2) + Date.now().toString(36)
