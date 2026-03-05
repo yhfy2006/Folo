@@ -114,22 +114,27 @@ export function loadAllSkills(): SkillEntry[] {
 
 /**
  * Generate the skills prompt block for injection into Claude prompts.
- * Claude will use the Read tool to load the full skill file when needed.
+ * Embeds the full skill content directly in the prompt so Claude doesn't
+ * need to use tools (Read/Write) which would cause multi-turn behavior
+ * and potentially write output to files instead of stdout.
  */
 export function formatSkillsPrompt(skills: SkillEntry[]): string {
   if (skills.length === 0) {
     return ""
   }
 
-  const skillList = skills.map((s) => `${s.name}: ${s.description}\n${s.filePath}`).join("\n\n")
+  const skillBlocks = skills
+    .map((s) => {
+      try {
+        const content = fs.readFileSync(s.filePath, "utf-8")
+        // Strip YAML frontmatter
+        const body = content.replace(/^---[\s\S]*?---\n*/, "").trim()
+        return `### Skill: ${s.name}\n\n${body}`
+      } catch {
+        return `### Skill: ${s.name}\n\n${s.description}`
+      }
+    })
+    .join("\n\n")
 
-  return `## Skills（强制）
-执行前扫描以下 skill 列表。
-- 如果某个 skill 明确适用：用 Read 工具读取其文件，然后按指导执行。
-- 如果没有匹配的：不读任何 skill，按常识执行。
-约束：每次最多读取一个 skill；选定后再读取，不要提前加载。
-
-<available_skills>
-${skillList}
-</available_skills>`
+  return `## Available Skills\n\nFollow the applicable skill guidelines below.\n\n${skillBlocks}`
 }

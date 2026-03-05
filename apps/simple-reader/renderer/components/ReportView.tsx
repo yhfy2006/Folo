@@ -1346,6 +1346,8 @@ function YouTubeConnectionManager({
   const [checking, setChecking] = React.useState(false)
   const [connecting, setConnecting] = React.useState(false)
   const [error, setError] = React.useState("")
+  const [waitingForCode, setWaitingForCode] = React.useState(false)
+  const [authCode, setAuthCode] = React.useState("")
 
   // Check connection status on mount
   React.useEffect(() => {
@@ -1393,23 +1395,30 @@ function YouTubeConnectionManager({
       // Open in browser
       window.open(urlResult.url, "_blank")
 
-      // Prompt for code
-      const code = window.prompt(
-        "After authorizing in your browser, paste the authorization code here:",
-      )
+      // Show inline input for authorization code
+      setWaitingForCode(true)
+      setAuthCode("")
+      setConnecting(false)
+    } catch (err) {
+      setError(String(err))
+      setConnecting(false)
+    }
+  }
 
-      if (!code) {
-        setConnecting(false)
-        return
-      }
+  const handleSubmitCode = async () => {
+    if (!authCode.trim()) return
 
-      // Exchange code
-      const exchangeResult = await window.api.youtubeExchangeCode(code.trim())
+    setConnecting(true)
+    setError("")
+
+    try {
+      const exchangeResult = await window.api.youtubeExchangeCode(authCode.trim())
       if (exchangeResult.success) {
-        // Reload prefs to get the saved refresh token
         const updatedPrefs = await window.api.getPreferences()
         setPrefs(updatedPrefs)
         setConnected(true)
+        setWaitingForCode(false)
+        setAuthCode("")
         console.info("[youtube-ui] Connected successfully")
       } else {
         setError(exchangeResult.error || "Failed to exchange code")
@@ -1457,6 +1466,41 @@ function YouTubeConnectionManager({
           </button>
         </div>
       </div>
+      {waitingForCode && (
+        <div className="mt-2 space-y-1">
+          <p className="text-[10px] text-[hsl(var(--muted-foreground))]">
+            Paste the authorization code from the browser:
+          </p>
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              value={authCode}
+              onChange={(e) => setAuthCode(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSubmitCode()}
+              placeholder="Authorization code"
+              className="flex-1 rounded border border-[hsl(var(--border))] bg-[hsl(var(--background))] px-2 py-1 text-xs"
+              autoFocus
+            />
+            <button
+              onClick={handleSubmitCode}
+              disabled={connecting || !authCode.trim()}
+              className="rounded px-2 py-1 text-xs text-white disabled:opacity-50"
+              style={{ backgroundColor: "#FF6B35" }}
+            >
+              {connecting ? "..." : "Submit"}
+            </button>
+            <button
+              onClick={() => {
+                setWaitingForCode(false)
+                setAuthCode("")
+              }}
+              className="rounded px-2 py-1 text-xs text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))]"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
       {error && <p className="mt-1 text-[10px] text-red-500">{error}</p>}
     </div>
   )

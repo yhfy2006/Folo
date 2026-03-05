@@ -294,6 +294,7 @@ ${typeof content === "string" ? stripHtml(content) : content}
   return `${skillsSection}
 
 Your task: Generate a daily briefing report from the curated articles below.
+Output the full report directly as Markdown text. Do NOT write to any files. Do NOT reference file paths. Just output the report content.
 
 ${langInstruction}
 ${styleInstruction}
@@ -331,7 +332,7 @@ export function runClaude(prompt: string, extraArgs?: string[]): Promise<string>
     }
     delete env.CLAUDECODE
 
-    const args = ["-p", "--dangerously-skip-permissions", ...(extraArgs || [])]
+    const args = ["-p", "--dangerously-skip-permissions", "--max-turns", "1", ...(extraArgs || [])]
     const proc = spawn(claudePath, args, {
       stdio: ["pipe", "pipe", "pipe"],
       env,
@@ -390,7 +391,7 @@ function runClaudeStreaming(
     }
     delete env.CLAUDECODE
 
-    const args = ["-p", "--dangerously-skip-permissions", ...(extraArgs || [])]
+    const args = ["-p", "--dangerously-skip-permissions", "--max-turns", "1", ...(extraArgs || [])]
     const proc = spawn(claudePath, args, {
       stdio: ["pipe", "pipe", "pipe"],
       env,
