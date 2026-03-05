@@ -121,7 +121,8 @@ export async function generateReport(
   }
 
   // Parse selected entry IDs from screening result
-  const selectedIds = parseSelectedIds(screeningResult, entriesToScreen)
+  const screening = parseScreeningResult(screeningResult, entriesToScreen)
+  const { selectedIds } = screening
 
   if (selectedIds.length === 0) {
     onChunk("AI found no particularly noteworthy entries in this time period.")
@@ -146,9 +147,29 @@ export async function generateReport(
   const selectedEntries = entries.filter((e) => limitedIds.includes(e.id))
   const enrichedEntries = await enrichWithOriginalContent(selectedEntries, onStatus)
 
-  // Stage 3: Generate final report with streaming - use the "daily-report" skill
+  // Stage 2.5: Historical topic retrieval
+  onStatus("Retrieving historical topic context...")
+  const historicalTopics = findRelevantTopics(enrichedEntries, groupId)
+
+  // Stage 2.7: Hot topic deep dive
+  let deepDiveContext = ""
+  if (screening.hotTopicIds.length > 0) {
+    deepDiveContext = await deepDiveHotTopics(
+      enrichedEntries,
+      screening.hotTopicIds,
+      screening.hotTopicReasons,
+      onStatus,
+    )
+  }
+
+  // Stage 3: Generate final report with streaming
   onStatus(`Generating report from ${enrichedEntries.length} articles...`)
-  const reportPrompt = buildReportPrompt(enrichedEntries, effectivePrefs)
+  const reportPrompt = buildReportPrompt(
+    enrichedEntries,
+    effectivePrefs,
+    historicalTopics,
+    deepDiveContext,
+  )
   console.info("[ai-report] Report prompt length:", reportPrompt.length, "chars")
 
   let fullContent = ""
@@ -192,6 +213,12 @@ export async function generateReport(
       "entries recorded",
     )
 
+    // Stage 3.5: Extract topics (errors are non-blocking)
+    onStatus("Extracting topic digest...")
+    await extractAndSaveTopics(fullContent, reportId, groupId).catch((err) => {
+      console.warn("[ai-report] Topic extraction failed:", err)
+    })
+
     onDone()
   } catch (err) {
     onError(`Claude CLI error during report generation: ${err}`)
@@ -222,9 +249,22 @@ function buildScreeningPrompt(entries: EntryWithFeed[], prefs: UserPreferences):
 
   return `${skillsSection}
 
-Your task: Screen RSS entries and select valuable ones.
+Your task: Screen RSS entries and select valuable ones, and identify 1-2 "hot topics" that deserve deeper investigation.
 
 ${interestsStr}
+
+## Output Format
+
+Return a JSON object (no markdown fencing, no extra text):
+{
+  "selected": [0, 3, 5, ...],
+  "hot_topics": [
+    { "index": 3, "reason": "Brief reason why this is a breakthrough or major development" }
+  ]
+}
+
+- "selected": array of entry indices worth including in today's report
+- "hot_topics": 1-2 entries that are groundbreaking, first-of-their-kind, major announcements, paradigm shifts, or especially controversial. These will receive deeper research and more detailed coverage. If nothing qualifies, use an empty array.
 
 ${entries.length} entries to review:
 ${entryList}`
@@ -258,7 +298,228 @@ async function enrichWithOriginalContent(
   return enriched
 }
 
-function buildReportPrompt(entries: EnrichedEntry[], prefs: UserPreferences): string {
+interface HistoricalTopic {
+  reportDate: string
+  name: string
+  keywords: string[]
+  summary: string
+}
+
+function extractKeywordsFromEntries(entries: EnrichedEntry[]): string[] {
+  const keywords: string[] = []
+  for (const entry of entries) {
+    const title = (entry.title || "").toLowerCase()
+    // Split on common delimiters and filter short/stop words
+    const words = title.split(/[\s,.:;|/\-—–]+/).filter((w) => w.length > 2)
+    keywords.push(...words)
+  }
+  // Deduplicate
+  return [...new Set(keywords)]
+}
+
+function queryRecentTopics(
+  limit: number,
+  groupId?: string,
+): Array<{
+  reportDate: string
+  topics: import("./database").TopicEntry[]
+}> {
+  const rows = groupId
+    ? queryAll<{ topics_json: string; created_at: number }>(
+        `SELECT topics_json, created_at FROM report_topics
+         WHERE group_id = ? ORDER BY created_at DESC LIMIT ?`,
+        [groupId, limit],
+      )
+    : queryAll<{ topics_json: string; created_at: number }>(
+        `SELECT topics_json, created_at FROM report_topics
+         WHERE group_id IS NULL ORDER BY created_at DESC LIMIT ?`,
+        [limit],
+      )
+
+  return rows.map((r) => ({
+    reportDate: new Date(r.created_at * 1000).toLocaleDateString("en-CA"),
+    topics: JSON.parse(r.topics_json) as import("./database").TopicEntry[],
+  }))
+}
+
+function findRelevantTopics(currentEntries: EnrichedEntry[], groupId?: string): HistoricalTopic[] {
+  const currentKeywords = extractKeywordsFromEntries(currentEntries)
+  if (currentKeywords.length === 0) return []
+
+  // Query recent 7 reports' topics
+  const recentReports = queryRecentTopics(7, groupId)
+  const matched: HistoricalTopic[] = []
+  const matchedKeywords = new Set<string>()
+
+  for (const report of recentReports) {
+    for (const topic of report.topics) {
+      const overlap = topic.keywords.filter((kw) =>
+        currentKeywords.some((ck) => ck.includes(kw) || kw.includes(ck)),
+      )
+      if (overlap.length > 0) {
+        matched.push({
+          reportDate: report.reportDate,
+          name: topic.name,
+          keywords: topic.keywords,
+          summary: topic.summary,
+        })
+        overlap.forEach((kw) => matchedKeywords.add(kw))
+      }
+    }
+  }
+
+  // If we found matches, look deeper (up to 30 reports) for the same keywords
+  if (matchedKeywords.size > 0) {
+    const deepReports = queryRecentTopics(30, groupId)
+    for (const report of deepReports.slice(7)) {
+      for (const topic of report.topics) {
+        const overlap = topic.keywords.filter((kw) => matchedKeywords.has(kw))
+        if (overlap.length > 0) {
+          const alreadyExists = matched.some(
+            (m) => m.name === topic.name && m.reportDate === report.reportDate,
+          )
+          if (!alreadyExists) {
+            matched.push({
+              reportDate: report.reportDate,
+              name: topic.name,
+              keywords: topic.keywords,
+              summary: topic.summary,
+            })
+          }
+        }
+      }
+    }
+  }
+
+  console.info("[ai-report] Found", matched.length, "relevant historical topics")
+  return matched
+}
+
+function formatHistoricalContext(topics: HistoricalTopic[]): string {
+  if (topics.length === 0) return ""
+
+  const lines = topics.map((t) => `- [${t.reportDate}] ${t.name}: ${t.summary}`)
+  return `## Historical Topic Context
+
+The following topics were discussed in previous reports. If current articles
+continue or relate to these topics, naturally reference the connection
+(e.g., "Previously we reported...", "This is the latest development in...").
+Only reference when genuinely relevant; do not force connections.
+
+${lines.join("\n")}
+`
+}
+
+async function deepDiveHotTopics(
+  entries: EnrichedEntry[],
+  hotTopicIds: string[],
+  hotTopicReasons: Map<string, string>,
+  onStatus: (status: string) => void,
+): Promise<string> {
+  const hotEntries = entries.filter((e) => hotTopicIds.includes(e.id))
+  if (hotEntries.length === 0) return ""
+
+  const results: string[] = []
+
+  for (const entry of hotEntries) {
+    const content = entry.original_content || entry.content || entry.description || ""
+    const reason = hotTopicReasons.get(entry.id) || "Notable development"
+    onStatus(`Deep diving: ${entry.title || "hot topic"}...`)
+
+    const prompt = `You are a tech journalist researching a breaking story. Analyze this article in depth and provide:
+1. Why this matters (broader context and implications)
+2. Key technical details explained accessibly
+3. How this compares to or builds on previous developments in this space
+4. What this might mean going forward
+
+Article title: ${entry.title}
+Source: ${entry.feed_title || "Unknown"}
+Why this is notable: ${reason}
+
+Article content:
+${typeof content === "string" ? stripHtml(content).slice(0, 8000) : content}
+
+Output your analysis as flowing paragraphs (no bullet points or headers). Be vivid and engaging. Keep it under 800 characters.`
+
+    try {
+      const result = await runClaude(prompt, [], 5)
+      results.push(`### ${entry.title}\n${result.trim()}`)
+      console.info("[ai-report] Deep dive completed for:", entry.title)
+    } catch (err) {
+      console.warn("[ai-report] Deep dive failed for:", entry.title, err)
+    }
+  }
+
+  if (results.length === 0) return ""
+
+  return `## Deep Dive Research Results
+
+The following in-depth research was conducted on today's key topics.
+Use this material to provide richer, more vivid coverage in the report.
+
+${results.join("\n\n")}
+`
+}
+
+async function extractAndSaveTopics(
+  reportContent: string,
+  reportId: string,
+  groupId?: string,
+): Promise<void> {
+  const prompt = `Extract the main topics discussed in the following report. For each topic provide:
+- name: short topic name (max 10 characters)
+- keywords: related keywords array (lowercase English, 3-8 items)
+- summary: one-sentence summary (30-50 characters)
+
+Also generate an overall digest (100-200 characters) summarizing this report.
+
+Output strict JSON only, no markdown fencing:
+{
+  "topics": [
+    { "name": "...", "keywords": ["..."], "summary": "..." }
+  ],
+  "digest": "..."
+}
+
+Report content:
+${reportContent.slice(0, 5000)}`
+
+  try {
+    const result = await runClaude(prompt)
+    const jsonMatch = result.match(/\{[\s\S]*\}/)
+    if (!jsonMatch) {
+      console.warn("[ai-report] Topic extraction: no JSON found in result")
+      return
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]) as {
+      topics: Array<{ name: string; keywords: string[]; summary: string }>
+      digest: string
+    }
+
+    if (!parsed.topics || !parsed.digest) {
+      console.warn("[ai-report] Topic extraction: missing fields in result")
+      return
+    }
+
+    const topicId = Math.random().toString(36).slice(2) + Date.now().toString(36)
+    const now = Math.floor(Date.now() / 1000)
+    execute(
+      "INSERT INTO report_topics (id, report_id, group_id, topics_json, digest, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+      [topicId, reportId, groupId || null, JSON.stringify(parsed.topics), parsed.digest, now],
+    )
+    console.info("[ai-report] Topics extracted and saved:", parsed.topics.length, "topics")
+  } catch (err) {
+    console.warn("[ai-report] Topic extraction failed (non-blocking):", err)
+  }
+}
+
+function buildReportPrompt(
+  entries: EnrichedEntry[],
+  prefs: UserPreferences,
+  historicalTopics?: HistoricalTopic[],
+  deepDiveContext?: string,
+): string {
   const entryBlocks = entries
     .map((e) => {
       const content = e.original_content || e.content || e.description || "No content available"
@@ -291,6 +552,9 @@ ${typeof content === "string" ? stripHtml(content) : content}
 
   const skillsSection = formatSkillsPrompt(loadAllSkills())
 
+  const historicalSection = historicalTopics ? formatHistoricalContext(historicalTopics) : ""
+  const deepDiveSection = deepDiveContext || ""
+
   return `${skillsSection}
 
 Your task: Generate a daily briefing report from the curated articles below.
@@ -300,6 +564,21 @@ ${langInstruction}
 ${styleInstruction}
 ${interestsStr}
 
+## Writing Requirements
+
+- Provide brief, accessible explanations for technical terms and concepts. Assume readers are professionals interested in tech but not necessarily with deep technical backgrounds.
+- Example: Don't just say "RAG"; say "RAG (Retrieval-Augmented Generation, a technique that lets AI look up reference material before answering)"
+- First occurrence of a technical concept must be explained; subsequent mentions can use the abbreviation.
+
+## Length Requirements
+
+- Total report: max ~3500 Chinese characters (~15 minutes podcast audio)
+- Hot/explosive topics: 40-50% of total length for in-depth, vivid analysis
+- Other topics: concise, 100-200 characters each
+- Prefer depth on key topics over breadth of coverage
+
+${historicalSection}
+${deepDiveSection}
 ${entries.length} curated articles:
 
 ${entryBlocks}`
@@ -319,7 +598,11 @@ function getLanguageInstruction(lang: string): string {
   return langMap[lang] || `Language: ${lang}`
 }
 
-export function runClaude(prompt: string, extraArgs?: string[]): Promise<string> {
+export function runClaude(
+  prompt: string,
+  extraArgs?: string[],
+  maxTurns?: number,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const claudePath = getClaudePath()
     const workspacePath = getWorkspacePath()
@@ -332,7 +615,14 @@ export function runClaude(prompt: string, extraArgs?: string[]): Promise<string>
     }
     delete env.CLAUDECODE
 
-    const args = ["-p", "--dangerously-skip-permissions", "--max-turns", "1", ...(extraArgs || [])]
+    const turns = maxTurns ?? 1
+    const args = [
+      "-p",
+      "--dangerously-skip-permissions",
+      "--max-turns",
+      String(turns),
+      ...(extraArgs || []),
+    ]
     const proc = spawn(claudePath, args, {
       stdio: ["pipe", "pipe", "pipe"],
       env,
@@ -378,6 +668,7 @@ function runClaudeStreaming(
   prompt: string,
   onChunk: (text: string) => void,
   extraArgs?: string[],
+  maxTurns?: number,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const claudePath = getClaudePath()
@@ -391,7 +682,14 @@ function runClaudeStreaming(
     }
     delete env.CLAUDECODE
 
-    const args = ["-p", "--dangerously-skip-permissions", "--max-turns", "1", ...(extraArgs || [])]
+    const turns = maxTurns ?? 1
+    const args = [
+      "-p",
+      "--dangerously-skip-permissions",
+      "--max-turns",
+      String(turns),
+      ...(extraArgs || []),
+    ]
     const proc = spawn(claudePath, args, {
       stdio: ["pipe", "pipe", "pipe"],
       env,
@@ -431,20 +729,70 @@ function runClaudeStreaming(
   })
 }
 
-function parseSelectedIds(result: string, entries: EntryWithFeed[]): string[] {
+interface ScreeningResult {
+  selectedIds: string[]
+  hotTopicIds: string[]
+  hotTopicReasons: Map<string, string>
+}
+
+function parseScreeningResult(result: string, entries: EntryWithFeed[]): ScreeningResult {
   try {
-    const match = result.match(/\[[\s\S]*?\]/)
-    if (!match) {
-      console.info("[ai-report] No JSON array found in screening result, using all entries")
-      return entries.map((e) => e.id)
+    // Try to parse as the new JSON object format
+    const jsonMatch = result.match(/\{[\s\S]*\}/)
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]) as {
+        selected?: number[]
+        hot_topics?: Array<{ index: number; reason: string }>
+      }
+
+      if (parsed.selected && Array.isArray(parsed.selected)) {
+        const selectedIds = parsed.selected
+          .filter((i) => i >= 0 && i < entries.length)
+          .map((i) => entries[i]!.id)
+
+        const hotTopicIds: string[] = []
+        const hotTopicReasons = new Map<string, string>()
+        if (parsed.hot_topics && Array.isArray(parsed.hot_topics)) {
+          for (const ht of parsed.hot_topics) {
+            if (ht.index >= 0 && ht.index < entries.length) {
+              const { id } = entries[ht.index]!
+              hotTopicIds.push(id)
+              hotTopicReasons.set(id, ht.reason)
+            }
+          }
+        }
+
+        console.info(
+          "[ai-report] Selected",
+          selectedIds.length,
+          "entries,",
+          hotTopicIds.length,
+          "hot topics",
+        )
+        return { selectedIds, hotTopicIds, hotTopicReasons }
+      }
     }
 
-    const indices = JSON.parse(match[0]) as number[]
-    console.info("[ai-report] Selected", indices.length, "entries from screening")
-    return indices.filter((i) => i >= 0 && i < entries.length).map((i) => entries[i]!.id)
+    // Fallback: try old array format
+    const arrayMatch = result.match(/\[[\s\S]*?\]/)
+    if (arrayMatch) {
+      const indices = JSON.parse(arrayMatch[0]) as number[]
+      const selectedIds = indices
+        .filter((i) => i >= 0 && i < entries.length)
+        .map((i) => entries[i]!.id)
+      console.info(
+        "[ai-report] Selected",
+        selectedIds.length,
+        "entries (legacy format, no hot topics)",
+      )
+      return { selectedIds, hotTopicIds: [], hotTopicReasons: new Map() }
+    }
+
+    console.info("[ai-report] No JSON found in screening result, using all entries")
+    return { selectedIds: entries.map((e) => e.id), hotTopicIds: [], hotTopicReasons: new Map() }
   } catch (err) {
     console.info("[ai-report] Failed to parse screening result:", err)
-    return entries.map((e) => e.id)
+    return { selectedIds: entries.map((e) => e.id), hotTopicIds: [], hotTopicReasons: new Map() }
   }
 }
 

@@ -46,6 +46,21 @@ export interface FeedGroup {
   created_at: number
 }
 
+export interface ReportTopics {
+  id: string
+  report_id: string
+  group_id: string | null
+  topics_json: string // JSON string of TopicEntry[]
+  digest: string
+  created_at: number
+}
+
+export interface TopicEntry {
+  name: string
+  keywords: string[]
+  summary: string
+}
+
 // Database singleton
 let db: SqlJsDatabase | null = null
 let dbPath = ""
@@ -135,6 +150,19 @@ export async function initDatabase() {
       feed_id TEXT NOT NULL REFERENCES feeds(id),
       PRIMARY KEY (group_id, feed_id)
     );
+
+    CREATE TABLE IF NOT EXISTS report_topics (
+      id TEXT PRIMARY KEY,
+      report_id TEXT NOT NULL,
+      group_id TEXT,
+      topics_json TEXT NOT NULL,
+      digest TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_report_topics_report ON report_topics(report_id);
+    CREATE INDEX IF NOT EXISTS idx_report_topics_group ON report_topics(group_id);
+    CREATE INDEX IF NOT EXISTS idx_report_topics_created ON report_topics(created_at);
   `)
 
   // Migrate: add type column if missing
