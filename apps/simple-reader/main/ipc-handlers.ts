@@ -6,6 +6,7 @@ import path from "pathe"
 import { generatePodcastScript, generateReport } from "./ai-report"
 import type { Entry, Feed, FeedGroup } from "./database"
 import { execute, queryAll, queryOne, saveDatabase } from "./database"
+import { generateHtmlPage } from "./html-generator"
 import { parseOPML } from "./opml-parser"
 import { getSchedulerStatus, startPipelineScheduler } from "./pipeline-scheduler"
 import type { UserPreferences } from "./preferences"
@@ -216,6 +217,26 @@ export function registerIpcHandlers() {
   ipcMain.handle("delete-report", (_event, reportId: string) => {
     execute("DELETE FROM reports WHERE id = ?", [reportId])
     return { success: true }
+  })
+
+  ipcMain.handle("preview-report-html", (_event, reportId: string) => {
+    const report = queryOne<{ content: string; title: string; created_at: number }>(
+      "SELECT content, title, created_at FROM reports WHERE id = ? AND type = 'report'",
+      [reportId],
+    )
+    if (!report) return { success: false, error: "Report not found" }
+
+    // Find a matching podcast created on the same day
+    const reportDate = new Date(report.created_at * 1000).toISOString().slice(0, 10)
+    const dayStart = Math.floor(new Date(reportDate).getTime() / 1000)
+    const dayEnd = dayStart + 86400
+    const podcast = queryOne<{ content: string }>(
+      "SELECT content FROM reports WHERE type = 'podcast' AND created_at >= ? AND created_at < ? ORDER BY created_at DESC LIMIT 1",
+      [dayStart, dayEnd],
+    )
+
+    const html = generateHtmlPage(report.content, null, reportDate, podcast?.content || null)
+    return { success: true, html }
   })
 
   ipcMain.handle("generate-podcast-script", async (event, reportContent: string) => {

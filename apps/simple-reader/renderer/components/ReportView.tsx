@@ -430,6 +430,7 @@ function ReportHistory({
 }) {
   const [reports, setReports] = React.useState<SavedReport[]>([])
   const [loaded, setLoaded] = React.useState(false)
+  const [previewHtml, setPreviewHtml] = React.useState<string | null>(null)
   const { setContent, setPodcastContent, setShowPodcast } = useReportStore()
 
   React.useEffect(() => {
@@ -448,6 +449,14 @@ function ReportHistory({
       } else {
         setContent(report.content)
       }
+    }
+  }
+
+  const handlePreview = async (e: React.MouseEvent, reportId: string) => {
+    e.stopPropagation()
+    const result = await window.api.previewReportHtml(reportId)
+    if (result.success && result.html) {
+      setPreviewHtml(result.html)
     }
   }
 
@@ -504,10 +513,13 @@ function ReportHistory({
           </h4>
           <div className="space-y-1">
             {reports.map((report) => (
-              <button
+              <div
                 key={report.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleView(report.id, report.type)}
-                className="group flex w-full items-center justify-between rounded border border-[hsl(var(--border))] px-3 py-2.5 text-left transition-colors hover:bg-[hsl(var(--muted))]"
+                onKeyDown={(e) => e.key === "Enter" && handleView(report.id, report.type)}
+                className="group flex w-full cursor-pointer items-center justify-between rounded border border-[hsl(var(--border))] px-3 py-2.5 text-left transition-colors hover:bg-[hsl(var(--muted))]"
               >
                 <div>
                   <div className="flex items-center gap-1.5 text-xs font-medium">
@@ -524,15 +536,48 @@ function ReportHistory({
                       ` · ${report.entry_count} articles · ${report.time_range}h range`}
                   </div>
                 </div>
-                <span
-                  onClick={(e) => handleDelete(e, report.id)}
-                  className="hidden rounded p-1 text-xs text-[hsl(var(--muted-foreground))] hover:bg-red-500/20 hover:text-red-500 group-hover:block"
-                >
-                  ×
+                <span className="flex items-center gap-1">
+                  {report.type === "report" && (
+                    <button
+                      onClick={(e) => handlePreview(e, report.id)}
+                      className="hover:bg-[color:var(--accent-color)]/15 hidden rounded px-1.5 py-0.5 text-[10px] text-[hsl(var(--muted-foreground))] hover:text-[color:var(--accent-color)] group-hover:block"
+                      title="Preview HTML page"
+                    >
+                      Preview
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => handleDelete(e, report.id)}
+                    className="hidden rounded p-1 text-xs text-[hsl(var(--muted-foreground))] hover:bg-red-500/20 hover:text-red-500 group-hover:block"
+                    title="Delete report"
+                  >
+                    ×
+                  </button>
                 </span>
-              </button>
+              </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* HTML Preview overlay */}
+      {previewHtml && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/60">
+          <div className="flex items-center justify-between bg-[hsl(var(--background))] px-4 py-2 shadow">
+            <span className="text-xs font-medium">HTML Preview</span>
+            <button
+              onClick={() => setPreviewHtml(null)}
+              className="rounded px-2 py-1 text-xs hover:bg-[hsl(var(--muted))]"
+            >
+              Close
+            </button>
+          </div>
+          <iframe
+            srcDoc={previewHtml}
+            className="flex-1 bg-white"
+            sandbox="allow-same-origin"
+            title="Report HTML Preview"
+          />
         </div>
       )}
     </div>

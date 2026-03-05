@@ -37,6 +37,12 @@ const api = {
   getReports: (groupId?: string) => ipcRenderer.invoke("get-reports", groupId),
   getReport: (reportId: string) => ipcRenderer.invoke("get-report", reportId),
   deleteReport: (reportId: string) => ipcRenderer.invoke("delete-report", reportId),
+  previewReportHtml: (reportId: string) =>
+    ipcRenderer.invoke("preview-report-html", reportId) as Promise<{
+      success: boolean
+      html?: string
+      error?: string
+    }>,
   onReportChunk: (callback: (chunk: string) => void) => {
     const handler = (_event: any, chunk: string) => callback(chunk)
     ipcRenderer.on("report-chunk", handler)
