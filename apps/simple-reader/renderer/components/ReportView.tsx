@@ -50,19 +50,8 @@ export function ReportView() {
     }
   }, [content, generating, podcastContent, podcastGenerating])
 
-  // Listen for scheduled auto-trigger from main process
-  useEffect(() => {
-    const cleanup = window.api.onPipelineAutoTrigger((groupId?: string) => {
-      if (!pipelineRunning) {
-        console.info(
-          "[auto-trigger] Scheduled pipeline triggered",
-          groupId ? `for group ${groupId}` : "",
-        )
-        startPipeline(groupId)
-      }
-    })
-    return cleanup
-  }, [pipelineRunning, startPipeline])
+  // NOTE: Pipeline auto-trigger listener is in App.tsx (always mounted),
+  // not here, because ReportView may be unmounted when user is browsing articles.
 
   const handleExport = useCallback(async () => {
     if (!content) return

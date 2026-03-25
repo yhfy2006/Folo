@@ -35,6 +35,24 @@ export function App() {
     return cleanup
   }, [loadFeeds, loadUnreadCounts, loadEntries])
 
+  // Listen for scheduled pipeline auto-trigger from main process.
+  // This must be in App (always mounted), not ReportView (conditionally mounted).
+  useEffect(() => {
+    if (!window.api) return
+
+    const cleanup = window.api.onPipelineAutoTrigger((groupId?: string) => {
+      const { pipelineRunning, startPipeline } = useReportStore.getState()
+      if (!pipelineRunning) {
+        console.info(
+          "[auto-trigger] Scheduled pipeline triggered",
+          groupId ? `for group ${groupId}` : "",
+        )
+        startPipeline(groupId)
+      }
+    })
+    return cleanup
+  }, [])
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[hsl(var(--background))]">
       {/* Draggable title bar region - pointer-events-none so buttons underneath remain clickable */}
