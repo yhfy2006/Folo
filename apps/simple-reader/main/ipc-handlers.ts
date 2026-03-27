@@ -262,7 +262,12 @@ export function registerIpcHandlers() {
   })
 
   ipcMain.handle("generate-audio", async (event, text: string) => {
-    console.info("[ipc] generate-audio called, text length:", text.length)
+    console.info(
+      "[ipc] generate-audio called, text type:",
+      typeof text,
+      "length:",
+      typeof text === "string" ? text.length : "N/A",
+    )
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return { success: false, error: "No window found" }
 

@@ -84,7 +84,7 @@ export function ReportView() {
 
   const handleGenerateAudio = useCallback(
     (text?: string) => {
-      const source = text || podcastContent || content
+      const source = (typeof text === "string" ? text : undefined) || podcastContent || content
       if (!source) return
       startAudioGeneration(source)
     },
