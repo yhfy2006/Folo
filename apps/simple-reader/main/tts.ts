@@ -212,16 +212,17 @@ async function generateSync(
 
     console.info("[tts] Audio saved:", filePath, `(${audioBuffer.length} bytes)`)
 
-    // Fetch subtitles if available
+    // Fetch subtitles if available (non-blocking, errors are swallowed)
     let subtitles: SubtitleSegment[] | undefined
-    const subtitleUrl = data.data?.subtitle_file
-    if (subtitleUrl) {
-      try {
+    try {
+      const subtitleUrl = data.data?.subtitle_file
+      if (subtitleUrl && typeof subtitleUrl === "string") {
         subtitles = await fetchAndParseSubtitles(subtitleUrl, headers)
         console.info("[tts] Subtitles fetched:", subtitles.length, "segments")
-      } catch (err) {
-        console.warn("[tts] Failed to fetch subtitles (non-blocking):", err)
       }
+    } catch (err) {
+      console.warn("[tts] Failed to fetch subtitles (non-blocking):", String(err))
+      subtitles = undefined
     }
 
     callbacks.onDone(filePath, subtitles)

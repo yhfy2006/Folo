@@ -269,12 +269,17 @@ export function registerIpcHandlers() {
     try {
       await generateAudio(text, {
         onStatus: (status) => win.webContents.send("audio-status", status),
-        onDone: (filePath) => win.webContents.send("audio-done", filePath),
-        onError: (error) => win.webContents.send("audio-error", error),
+        onDone: (filePath) => {
+          // Only send filePath (string) through IPC, ignore subtitles
+          win.webContents.send("audio-done", filePath)
+        },
+        onError: (error) => win.webContents.send("audio-error", String(error)),
       })
       return { success: true }
-    } catch (err) {
-      return { success: false, error: String(err) }
+    } catch (err: unknown) {
+      // Ensure only serializable data is returned through IPC
+      const message = err instanceof Error ? err.message : String(err)
+      return { success: false, error: message }
     }
   })
 
