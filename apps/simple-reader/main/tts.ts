@@ -88,9 +88,20 @@ function getAudioDir(): string {
   return dir
 }
 
+export interface SubtitleSegment {
+  text: string
+  start: number // seconds
+  end: number // seconds
+}
+
+export interface TtsResult {
+  filePath: string
+  subtitles?: SubtitleSegment[]
+}
+
 interface TtsCallbacks {
   onStatus: (status: string) => void
-  onDone: (filePath: string) => void
+  onDone: (filePath: string, subtitles?: SubtitleSegment[]) => void
   onError: (error: string) => void
 }
 
@@ -168,6 +179,7 @@ async function generateSync(
         model,
         text,
         stream: false,
+        subtitle_enable: true,
         voice_setting: voiceSetting,
         audio_setting: audioSetting,
         language_boost: "auto",
@@ -199,7 +211,20 @@ async function generateSync(
     fs.writeFileSync(filePath, audioBuffer)
 
     console.info("[tts] Audio saved:", filePath, `(${audioBuffer.length} bytes)`)
-    callbacks.onDone(filePath)
+
+    // Fetch subtitles if available
+    let subtitles: SubtitleSegment[] | undefined
+    const subtitleUrl = data.data?.subtitle_file
+    if (subtitleUrl) {
+      try {
+        subtitles = await fetchAndParseSubtitles(subtitleUrl, headers)
+        console.info("[tts] Subtitles fetched:", subtitles.length, "segments")
+      } catch (err) {
+        console.warn("[tts] Failed to fetch subtitles (non-blocking):", err)
+      }
+    }
+
+    callbacks.onDone(filePath, subtitles)
   } catch (err) {
     callbacks.onError(`TTS request failed: ${err}`)
   }
@@ -329,16 +354,49 @@ async function generateAsync(
 }
 
 /**
- * Promise-based wrapper: generates audio and returns the file path.
+ * Fetch subtitle JSON from MiniMax subtitle_file URL and convert to SubtitleSegment[].
+ * MiniMax returns sentence-level subtitles with millisecond timestamps.
+ */
+async function fetchAndParseSubtitles(
+  url: string,
+  headers: Record<string, string>,
+): Promise<SubtitleSegment[]> {
+  const resp = await fetch(url, {
+    headers: { Authorization: headers.Authorization },
+  })
+
+  if (!resp.ok) {
+    throw new Error(`Subtitle fetch failed: HTTP ${resp.status}`)
+  }
+
+  const data = await resp.json()
+
+  // MiniMax subtitle format: array of {text, begin_time, end_time} with ms timestamps
+  // or {subtitles: [{text, begin_time, end_time}]}
+  const items: Array<{ text: string; begin_time: number; end_time: number }> = Array.isArray(data)
+    ? data
+    : data.subtitles || data.data || []
+
+  return items
+    .filter((item) => item.text && item.text.trim().length > 0)
+    .map((item) => ({
+      text: item.text.trim(),
+      start: item.begin_time / 1000, // ms → seconds
+      end: item.end_time / 1000,
+    }))
+}
+
+/**
+ * Promise-based wrapper: generates audio and returns file path + optional subtitles.
  */
 export async function generateAudioToFile(
   text: string,
   onStatus: (status: string) => void,
-): Promise<string> {
+): Promise<TtsResult> {
   return new Promise((resolve, reject) => {
     generateAudio(text, {
       onStatus,
-      onDone: (filePath) => resolve(filePath),
+      onDone: (filePath, subtitles) => resolve({ filePath, subtitles }),
       onError: (error) => reject(new Error(error)),
     }).catch(reject)
   })

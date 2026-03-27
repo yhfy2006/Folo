@@ -71,6 +71,7 @@ export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string
   }
 
   // Determine which optional stages are enabled
+  // Video is enabled if Deepgram key is configured (MiniMax subtitles may also be used as primary source)
   const videoEnabled = !!prefs.deepgramApiKey
   const youtubeEnabled = videoEnabled && prefs.youtubeEnabled && !!prefs.youtubeRefreshToken
 
@@ -172,10 +173,16 @@ export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string
   }
 
   let audioFilePath: string
+  let ttsSubtitles: import("./tts").SubtitleSegment[] | undefined
   try {
-    audioFilePath = await generateAudioToFile(podcastScript, (status) => {
+    const ttsResult = await generateAudioToFile(podcastScript, (status) => {
       callbacks.onStatus(status)
     })
+    audioFilePath = ttsResult.filePath
+    ttsSubtitles = ttsResult.subtitles
+    if (ttsSubtitles) {
+      console.info(`[pipeline] MiniMax returned ${ttsSubtitles.length} subtitle segments`)
+    }
   } catch (err) {
     callbacks.onError("audio", `Audio generation failed: ${err}`)
     return
@@ -268,37 +275,64 @@ export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string
     step++
     callbacks.onStage("video")
     callbacks.onProgress(step, total)
-    callbacks.onStatus("Transcribing audio with Deepgram...")
 
     try {
-      // Transcribe audio
-      const deepgramResult = await transcribeAudio(audioFilePath, prefs.deepgramApiKey, {
-        onStatus: (status) => callbacks.onStatus(status),
-      })
+      let alignedSegments: import("./scene-generator").AlignedSegment[]
+      let deepgramWords: import("./deepgram").DeepgramWord[] = []
+      let subtitles: import("./scene-generator").SubtitleLine[]
 
-      // Align transcript with original script
-      callbacks.onStatus("Aligning transcript with script...")
-      const alignedSegments = alignTranscriptWithScript(deepgramResult.words, podcastScript)
+      if (ttsSubtitles && ttsSubtitles.length > 0) {
+        // Use MiniMax TTS subtitles directly — skip Deepgram transcription
+        callbacks.onStatus("Using MiniMax TTS subtitles (skipping Deepgram)...")
+        console.info("[pipeline] Using MiniMax subtitles, skipping Deepgram")
 
-      // Get audio duration from last word
-      if (deepgramResult.words.length > 0) {
-        audioDuration = deepgramResult.words.at(-1)!.end
+        // Convert TTS subtitles to aligned segments for scene generation
+        alignedSegments = ttsSubtitles.map((s) => ({
+          text: s.text,
+          start: s.start,
+          end: s.end,
+        }))
+
+        // Get audio duration from last subtitle
+        audioDuration = ttsSubtitles.at(-1)?.end || 0
+
+        // TTS subtitles are already sentence-level, use directly as video subtitles
+        subtitles = ttsSubtitles.map((s) => ({
+          text: s.text,
+          start: s.start,
+          end: s.end,
+        }))
+      } else {
+        // Fallback: use Deepgram for transcription + alignment
+        callbacks.onStatus("Transcribing audio with Deepgram...")
+        const deepgramResult = await transcribeAudio(audioFilePath, prefs.deepgramApiKey, {
+          onStatus: (status) => callbacks.onStatus(status),
+        })
+        deepgramWords = deepgramResult.words
+
+        callbacks.onStatus("Aligning transcript with script...")
+        alignedSegments = alignTranscriptWithScript(deepgramWords, podcastScript)
+
+        if (deepgramWords.length > 0) {
+          audioDuration = deepgramWords.at(-1)!.end
+        }
+
+        // Generate subtitles using LLM
+        callbacks.onStatus("Generating subtitles with LLM...")
+        subtitles = await generateSubtitlesWithLLM(alignedSegments, deepgramWords, (s) =>
+          callbacks.onStatus(s),
+        )
       }
 
-      // Generate scenes (pass deepgramWords for precise point timing)
+      // Generate scenes
       const scenes = await generateScenes(
         alignedSegments,
         reportContent,
         audioDuration,
         (status) => callbacks.onStatus(status),
-        deepgramResult.words,
+        deepgramWords,
       )
 
-      // Generate subtitles using LLM
-      callbacks.onStatus("Generating subtitles with LLM...")
-      const subtitles = await generateSubtitlesWithLLM(alignedSegments, deepgramResult.words, (s) =>
-        callbacks.onStatus(s),
-      )
       scenes.subtitles = subtitles
       console.info(`[pipeline] Generated ${subtitles.length} subtitle lines`)
 
