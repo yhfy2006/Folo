@@ -28,6 +28,7 @@ import {
   generateScenes,
   generateSubtitlesWithLLM,
 } from "./scene-generator"
+import type { SubtitleSegment } from "./tts"
 import { generateAudioToFile } from "./tts"
 import { downloadOGImages, renderThumbnail, renderVideo } from "./video-render"
 import { buildVideoDescription, refreshAccessToken, setThumbnail, uploadVideo } from "./youtube"
@@ -446,11 +447,9 @@ export async function runVideoOnly(callbacks: PipelineCallbacks): Promise<void> 
   const total = 3 // video, youtube, done
   let step = 0
 
-  // Validate required config
-  if (!prefs.deepgramApiKey) {
-    callbacks.onError("video", "Deepgram API Key not configured.")
-    return
-  }
+  // Validate required config (Deepgram needed unless SRT file exists)
+  // We check for SRT later, but still need Deepgram as fallback
+  const hasDeegramKey = !!prefs.deepgramApiKey
 
   // Load report and podcast script from database
   callbacks.onStage("video")
@@ -509,22 +508,50 @@ export async function runVideoOnly(callbacks: PipelineCallbacks): Promise<void> 
 
   let youtubeUrl: string | undefined
 
-  // Stage 1: Deepgram + Scene Generation + Video Render
+  // Stage 1: Scene Generation + Video Render
   step++
   callbacks.onProgress(step, total)
-  callbacks.onStatus("Transcribing audio with Deepgram...")
 
   try {
-    const deepgramResult = await transcribeAudio(audioFilePath, prefs.deepgramApiKey, {
-      onStatus: (status) => callbacks.onStatus(status),
-    })
-
-    callbacks.onStatus("Aligning transcript with script...")
-    const alignedSegments = alignTranscriptWithScript(deepgramResult.words, podcastScript)
-
+    let alignedSegments: import("./scene-generator").AlignedSegment[]
+    let deepgramWords: import("./deepgram").DeepgramWord[] = []
+    let subtitles: import("./scene-generator").SubtitleLine[]
     let audioDuration = 0
-    if (deepgramResult.words.length > 0) {
-      audioDuration = deepgramResult.words.at(-1)!.end
+
+    // Check for existing SRT file alongside the audio (from MiniMax TTS)
+    const srtPath = audioFilePath.replace(/\.mp3$/, ".srt")
+    if (fs.existsSync(srtPath)) {
+      callbacks.onStatus("Found SRT subtitle file, skipping Deepgram...")
+      console.info("[pipeline-video] Using existing SRT:", srtPath)
+
+      const srtSubtitles = parseSrtFile(srtPath)
+      alignedSegments = srtSubtitles.map((s) => ({ text: s.text, start: s.start, end: s.end }))
+      subtitles = srtSubtitles.map((s) => ({ text: s.text, start: s.start, end: s.end }))
+      audioDuration = srtSubtitles.at(-1)?.end || 0
+
+      console.info("[pipeline-video] Loaded", srtSubtitles.length, "subtitle segments from SRT")
+    } else if (hasDeegramKey) {
+      // Fallback: Deepgram transcription
+      callbacks.onStatus("Transcribing audio with Deepgram...")
+      const deepgramResult = await transcribeAudio(audioFilePath, prefs.deepgramApiKey, {
+        onStatus: (status) => callbacks.onStatus(status),
+      })
+      deepgramWords = deepgramResult.words
+
+      callbacks.onStatus("Aligning transcript with script...")
+      alignedSegments = alignTranscriptWithScript(deepgramWords, podcastScript)
+
+      if (deepgramWords.length > 0) {
+        audioDuration = deepgramWords.at(-1)!.end
+      }
+
+      callbacks.onStatus("Generating subtitles with LLM...")
+      subtitles = await generateSubtitlesWithLLM(alignedSegments, deepgramWords, (s) =>
+        callbacks.onStatus(s),
+      )
+    } else {
+      callbacks.onError("video", "No SRT file found and Deepgram API Key not configured.")
+      return
     }
 
     const scenes = await generateScenes(
@@ -532,13 +559,9 @@ export async function runVideoOnly(callbacks: PipelineCallbacks): Promise<void> 
       reportContent,
       audioDuration,
       (status) => callbacks.onStatus(status),
-      deepgramResult.words,
+      deepgramWords,
     )
 
-    callbacks.onStatus("Generating subtitles with LLM...")
-    const subtitles = await generateSubtitlesWithLLM(alignedSegments, deepgramResult.words, (s) =>
-      callbacks.onStatus(s),
-    )
     scenes.subtitles = subtitles
     console.info(`[pipeline-video] Generated ${subtitles.length} subtitle lines`)
 
@@ -623,4 +646,41 @@ export async function runVideoOnly(callbacks: PipelineCallbacks): Promise<void> 
 
   callbacks.onProgress(total, total)
   callbacks.onDone({ pageUrl, audioUrl, date, youtubeUrl })
+}
+
+/**
+ * Parse an SRT file into SubtitleSegment[].
+ */
+function parseSrtFile(srtPath: string): SubtitleSegment[] {
+  const content = fs.readFileSync(srtPath, "utf-8")
+  const blocks = content.split(/\n{2,}/).filter((b) => b.trim().length > 0)
+  const segments: SubtitleSegment[] = []
+
+  for (const block of blocks) {
+    const lines = block.trim().split("\n")
+    if (lines.length < 3) continue
+
+    const timeMatch = lines[1]!.match(
+      /(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})/,
+    )
+    if (!timeMatch) continue
+
+    const start =
+      Number(timeMatch[1]) * 3600 +
+      Number(timeMatch[2]) * 60 +
+      Number(timeMatch[3]) +
+      Number(timeMatch[4]) / 1000
+    const end =
+      Number(timeMatch[5]) * 3600 +
+      Number(timeMatch[6]) * 60 +
+      Number(timeMatch[7]) +
+      Number(timeMatch[8]) / 1000
+    const text = lines.slice(2).join("\n").trim()
+
+    if (text.length > 0) {
+      segments.push({ text, start, end })
+    }
+  }
+
+  return segments
 }
