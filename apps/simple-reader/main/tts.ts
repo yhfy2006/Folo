@@ -219,6 +219,12 @@ async function generateSync(
       if (subtitleUrl && typeof subtitleUrl === "string") {
         subtitles = await fetchAndParseSubtitles(subtitleUrl, headers)
         console.info("[tts] Subtitles fetched:", subtitles.length, "segments")
+
+        // Save subtitles as SRT file alongside the audio
+        const srtFileName = fileName.replace(/\.mp3$/, ".srt")
+        const srtPath = path.join(getAudioDir(), srtFileName)
+        fs.writeFileSync(srtPath, subtitlesToSrt(subtitles), "utf-8")
+        console.info("[tts] SRT saved:", srtPath)
       }
     } catch (err) {
       console.warn("[tts] Failed to fetch subtitles (non-blocking):", String(err))
@@ -385,6 +391,27 @@ async function fetchAndParseSubtitles(
       start: item.begin_time / 1000, // ms → seconds
       end: item.end_time / 1000,
     }))
+}
+
+/**
+ * Convert SubtitleSegment[] to SRT format string.
+ */
+function subtitlesToSrt(segments: SubtitleSegment[]): string {
+  return segments
+    .map((seg, i) => {
+      const startTs = formatSrtTime(seg.start)
+      const endTs = formatSrtTime(seg.end)
+      return `${i + 1}\n${startTs} --> ${endTs}\n${seg.text}\n`
+    })
+    .join("\n")
+}
+
+function formatSrtTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = Math.floor(seconds % 60)
+  const ms = Math.round((seconds % 1) * 1000)
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")},${String(ms).padStart(3, "0")}`
 }
 
 /**
