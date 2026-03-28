@@ -217,8 +217,15 @@ async function generateSync(
     try {
       const subtitleUrl = data.data?.subtitle_file
       if (subtitleUrl && typeof subtitleUrl === "string") {
-        subtitles = await fetchAndParseSubtitles(subtitleUrl, headers)
-        console.info("[tts] Subtitles fetched:", subtitles.length, "segments")
+        const rawSubtitles = await fetchAndParseSubtitles(subtitleUrl, headers)
+        subtitles = splitLongSubtitles(rawSubtitles)
+        console.info(
+          "[tts] Subtitles fetched:",
+          rawSubtitles.length,
+          "→ split to",
+          subtitles.length,
+          "segments",
+        )
 
         // Save subtitles as SRT file alongside the audio
         const srtFileName = fileName.replace(/\.mp3$/, ".srt")
@@ -390,6 +397,57 @@ async function fetchAndParseSubtitles(
       start: item.time_begin / 1000, // ms → seconds
       end: item.time_end / 1000,
     }))
+}
+
+const MAX_SUBTITLE_CHARS = 20
+
+/**
+ * Split long subtitle segments into shorter lines (~20 chars each).
+ * Splits at Chinese punctuation first, then at natural word boundaries.
+ * Timestamps are proportionally distributed based on character count.
+ */
+function splitLongSubtitles(segments: SubtitleSegment[]): SubtitleSegment[] {
+  const result: SubtitleSegment[] = []
+
+  for (const seg of segments) {
+    if (seg.text.length <= MAX_SUBTITLE_CHARS) {
+      result.push(seg)
+      continue
+    }
+
+    // Split at Chinese punctuation: ，。、；：！？
+    const parts = seg.text.split(/(?<=[，。、；：！？,;:!?])/).filter((p) => p.trim().length > 0)
+
+    // If punctuation split didn't help, force-split by character count
+    const chunks: string[] = []
+    for (const part of parts) {
+      if (part.length <= MAX_SUBTITLE_CHARS) {
+        chunks.push(part)
+      } else {
+        // Force split at MAX_SUBTITLE_CHARS boundaries
+        for (let i = 0; i < part.length; i += MAX_SUBTITLE_CHARS) {
+          chunks.push(part.slice(i, i + MAX_SUBTITLE_CHARS))
+        }
+      }
+    }
+
+    // Distribute time proportionally
+    const totalChars = chunks.reduce((sum, c) => sum + c.length, 0)
+    const duration = seg.end - seg.start
+    let currentTime = seg.start
+
+    for (const chunk of chunks) {
+      const chunkDuration = (chunk.length / totalChars) * duration
+      result.push({
+        text: chunk.trim(),
+        start: currentTime,
+        end: currentTime + chunkDuration,
+      })
+      currentTime += chunkDuration
+    }
+  }
+
+  return result
 }
 
 /**

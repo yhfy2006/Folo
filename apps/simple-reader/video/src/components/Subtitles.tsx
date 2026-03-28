@@ -51,6 +51,8 @@ export const Subtitles: React.FC<SubtitlesProps> = ({ lines }) => {
           backgroundColor: "rgba(0, 0, 0, 0.7)",
           borderRadius: 8,
           padding: `${spacing.xs}px ${spacing.md}px`,
+          maxWidth: "85%",
+          textAlign: "center",
           opacity,
         }}
       >
@@ -61,6 +63,7 @@ export const Subtitles: React.FC<SubtitlesProps> = ({ lines }) => {
             fontFamily: fonts.body,
             fontWeight: 500,
             letterSpacing: 1,
+            lineHeight: 1.5,
           }}
         >
           {currentLine.text}
