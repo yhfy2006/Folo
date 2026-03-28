@@ -378,9 +378,8 @@ async function fetchAndParseSubtitles(
 
   const data = await resp.json()
 
-  // MiniMax subtitle format: array of {text, begin_time, end_time} with ms timestamps
-  // or {subtitles: [{text, begin_time, end_time}]}
-  const items: Array<{ text: string; begin_time: number; end_time: number }> = Array.isArray(data)
+  // MiniMax subtitle format: array of {text, time_begin, time_end} with ms timestamps
+  const items: Array<{ text: string; time_begin: number; time_end: number }> = Array.isArray(data)
     ? data
     : data.subtitles || data.data || []
 
@@ -388,8 +387,8 @@ async function fetchAndParseSubtitles(
     .filter((item) => item.text && item.text.trim().length > 0)
     .map((item) => ({
       text: item.text.trim(),
-      start: item.begin_time / 1000, // ms → seconds
-      end: item.end_time / 1000,
+      start: item.time_begin / 1000, // ms → seconds
+      end: item.time_end / 1000,
     }))
 }
 
