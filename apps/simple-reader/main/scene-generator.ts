@@ -308,6 +308,13 @@ Return ONLY valid JSON matching this structure (no markdown fences):
     postProcessPointTimings(scenes, deepgramWords)
   }
 
+  // Final safety: ensure all scenes have positive duration (minimum 1 second)
+  for (const scene of scenes.scenes) {
+    if (scene.end <= scene.start) {
+      scene.end = scene.start + 1
+    }
+  }
+
   console.info("[scene-generator] Generated", scenes.scenes.length, "scenes")
   onStatus?.(`Generated ${scenes.scenes.length} scenes`)
 
@@ -427,8 +434,8 @@ function postProcessOverviewDuration(scenes: ScenesJson): void {
   const overviewDuration = overview.end - overview.start
   if (overviewDuration < MIN_OVERVIEW_DURATION) {
     const newEnd = overview.start + MIN_OVERVIEW_DURATION
-    // Don't extend past the first news scene's end
-    overview.end = Math.min(newEnd, firstNews.end - 5)
+    // Don't extend past the first news scene's end, but never go below overview.start + 1s
+    overview.end = Math.max(overview.start + 1, Math.min(newEnd, firstNews.end - 5))
     // Adjust first news start to match
     firstNews.start = overview.end
     console.info(

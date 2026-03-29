@@ -21,7 +21,7 @@ export const DailyReport: React.FC<DailyReportProps> = (props) => {
 
   const renderScene = (scene: Scene, i: number) => {
     const from = Math.round(scene.start * fps)
-    const durationInFrames = Math.round((scene.end - scene.start) * fps)
+    const durationInFrames = Math.max(1, Math.round((scene.end - scene.start) * fps))
 
     let content: React.ReactNode
 
