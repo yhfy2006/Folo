@@ -5,6 +5,7 @@ import {
   formatYouTubeInsights,
   parseDescriptionHeadlines,
 } from "../ai-report"
+import { queryAll } from "../database"
 
 // Mock database module — formatYouTubeInsights calls queryAll for fallback
 vi.mock("../database", () => ({
@@ -215,5 +216,57 @@ describe("buildScreeningPrompt with youtubeInsights", () => {
 
     expect(prompt).toContain("[0] Test Entry")
     expect(prompt).not.toContain("YouTube")
+  })
+})
+
+describe("formatYouTubeInsights with database fallback", () => {
+  it("should fall back to report_topics when description has no headlines", () => {
+    vi.mocked(queryAll).mockReturnValueOnce([
+      {
+        topics_json: JSON.stringify([
+          { name: "GPT-5", keywords: ["gpt", "openai"], summary: "GPT-5 released" },
+          { name: "Apple AI", keywords: ["apple", "chip"], summary: "New AI chip" },
+        ]),
+      },
+    ])
+
+    const videos = [
+      {
+        videoId: "v1",
+        title: "YOMOO 每日AI快送 — 2026-03-25",
+        publishedAt: "2026-03-25T08:00:00Z",
+        description: "No numbered headlines here, just a plain description.",
+        viewCount: 10000,
+        likeCount: 200,
+        commentCount: 20,
+      },
+    ]
+
+    const result = formatYouTubeInsights(videos)
+
+    expect(result).toContain("GPT-5")
+    expect(result).toContain("Apple AI")
+  })
+
+  it("should handle database query failure gracefully", () => {
+    vi.mocked(queryAll).mockImplementationOnce(() => {
+      throw new Error("DB error")
+    })
+
+    const videos = [
+      {
+        videoId: "v1",
+        title: "YOMOO 每日AI快送 — 2026-03-25",
+        publishedAt: "2026-03-25T08:00:00Z",
+        description: "No headlines.",
+        viewCount: 5000,
+        likeCount: 100,
+        commentCount: 5,
+      },
+    ]
+
+    const result = formatYouTubeInsights(videos)
+    expect(result).toContain("Views: 5000")
+    expect(result).not.toContain("Topics:")
   })
 })
