@@ -12,6 +12,7 @@ import { loadPreferences } from "./preferences"
 import { fetchArticleContent } from "./readability"
 import { formatSkillsPrompt, loadAllSkills } from "./skills"
 import { getWorkspacePath } from "./workspace"
+import type { ChannelVideo } from "./youtube"
 
 // Resolve the full path to claude CLI since Electron GUI apps
 // don't inherit the shell PATH on macOS
@@ -942,6 +943,60 @@ export async function generateSeoDescription(reportContent: string): Promise<str
 
 ${reportContent.slice(0, 3000)}`
   return (await runClaude(prompt)).trim()
+}
+
+export function parseDescriptionHeadlines(description: string): string[] {
+  const lines = description.split("\n")
+  const headlines: string[] = []
+  for (const line of lines) {
+    const match = line.match(/^\d+\.\s+(.+)/)
+    if (match) {
+      headlines.push(match[1]!.trim())
+    }
+  }
+  return headlines
+}
+
+export function formatYouTubeInsights(videos: ChannelVideo[]): string {
+  if (videos.length === 0) return ""
+
+  const sorted = [...videos].sort((a, b) => b.viewCount - a.viewCount)
+  const top = sorted.slice(0, 10)
+
+  const lines = top.map((v) => {
+    const date = v.publishedAt.slice(0, 10)
+    let headlines = parseDescriptionHeadlines(v.description)
+
+    if (headlines.length === 0) {
+      headlines = getTopicsFromDatabase(date)
+    }
+
+    const topicsStr = headlines.length > 0 ? `   Topics: ${headlines.join(", ")}` : ""
+
+    return `- ${date} | Views: ${v.viewCount} | Likes: ${v.likeCount} | Comments: ${v.commentCount}${topicsStr ? `\n${topicsStr}` : ""}`
+  })
+
+  return `## YouTube Audience Insights (recent videos, sorted by views)
+
+${lines.join("\n\n")}
+
+When screening entries, consider that topics similar to high-performing episodes may resonate better with the audience. This is a soft preference — news value still takes priority.`
+}
+
+function getTopicsFromDatabase(date: string): string[] {
+  try {
+    const dayStart = Math.floor(new Date(date).getTime() / 1000)
+    const dayEnd = dayStart + 86400
+    const rows = queryAll<{ topics_json: string }>(
+      `SELECT topics_json FROM report_topics WHERE created_at >= ? AND created_at < ? LIMIT 1`,
+      [dayStart, dayEnd],
+    )
+    if (rows.length === 0) return []
+    const topics = JSON.parse(rows[0]!.topics_json) as import("./database").TopicEntry[]
+    return topics.map((t) => t.name)
+  } catch {
+    return []
+  }
 }
 
 function stripHtml(html: string): string {
