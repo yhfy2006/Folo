@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest"
 
-import { formatYouTubeInsights, parseDescriptionHeadlines } from "../ai-report"
+import {
+  buildScreeningPrompt,
+  formatYouTubeInsights,
+  parseDescriptionHeadlines,
+} from "../ai-report"
 
 // Mock database module — formatYouTubeInsights calls queryAll for fallback
 vi.mock("../database", () => ({
@@ -115,5 +119,101 @@ describe("formatYouTubeInsights", () => {
     expect(result).toContain("Topic 0")
     expect(result).toContain("Topic 9")
     expect(result).not.toContain("Topic 10")
+  })
+})
+
+describe("buildScreeningPrompt with youtubeInsights", () => {
+  it("should include YouTube insights section when provided", () => {
+    const entries = [
+      {
+        id: "e1",
+        title: "Test Entry",
+        feed_title: "Test Feed",
+        feed_category: null,
+        description: "A test entry",
+        content: null,
+        url: null,
+        author: null,
+        guid: "g1",
+        feed_id: "f1",
+        published_at: 1000,
+        inserted_at: 1000,
+        read: 0,
+        original_content: null,
+      },
+    ]
+    const prefs = {
+      language: "zh-CN",
+      interests: ["AI"],
+      reportStyle: "detailed" as const,
+      timeRange: 24,
+      minimaxApiKey: "",
+      ttsVoiceId: "",
+      ttsModel: "",
+      githubToken: "",
+      githubOwner: "",
+      pipelineSchedule: "",
+      workerUrl: "",
+      workerSecret: "",
+      deepgramApiKey: "",
+      youtubeClientId: "",
+      youtubeClientSecret: "",
+      youtubeRefreshToken: "",
+      youtubeEnabled: false,
+    }
+
+    const youtubeInsights =
+      "## YouTube Audience Insights\n- 2026-03-25 | Views: 12500\n   Topics: GPT-5, Apple AI chip"
+
+    const prompt = buildScreeningPrompt(entries, prefs, youtubeInsights)
+
+    expect(prompt).toContain("YouTube Audience Insights")
+    expect(prompt).toContain("GPT-5")
+    expect(prompt).toContain("[0] Test Entry")
+  })
+
+  it("should work without YouTube insights", () => {
+    const entries = [
+      {
+        id: "e1",
+        title: "Test Entry",
+        feed_title: "Test Feed",
+        feed_category: null,
+        description: "A test entry",
+        content: null,
+        url: null,
+        author: null,
+        guid: "g1",
+        feed_id: "f1",
+        published_at: 1000,
+        inserted_at: 1000,
+        read: 0,
+        original_content: null,
+      },
+    ]
+    const prefs = {
+      language: "zh-CN",
+      interests: [],
+      reportStyle: "detailed" as const,
+      timeRange: 24,
+      minimaxApiKey: "",
+      ttsVoiceId: "",
+      ttsModel: "",
+      githubToken: "",
+      githubOwner: "",
+      pipelineSchedule: "",
+      workerUrl: "",
+      workerSecret: "",
+      deepgramApiKey: "",
+      youtubeClientId: "",
+      youtubeClientSecret: "",
+      youtubeRefreshToken: "",
+      youtubeEnabled: false,
+    }
+
+    const prompt = buildScreeningPrompt(entries, prefs)
+
+    expect(prompt).toContain("[0] Test Entry")
+    expect(prompt).not.toContain("YouTube")
   })
 })

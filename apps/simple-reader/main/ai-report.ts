@@ -39,6 +39,7 @@ export async function generateReport(
   onDone: () => void,
   onError: (error: string) => void,
   groupId?: string,
+  youtubeInsights?: string,
 ): Promise<void> {
   const prefs = loadPreferences()
   console.info("[ai-report] Preferences:", JSON.stringify(prefs))
@@ -109,7 +110,7 @@ export async function generateReport(
   )
 
   // Stage 1: Screening - use the "screening" skill
-  const screeningPrompt = buildScreeningPrompt(entriesToScreen, effectivePrefs)
+  const screeningPrompt = buildScreeningPrompt(entriesToScreen, effectivePrefs, youtubeInsights)
   console.info("[ai-report] Screening prompt length:", screeningPrompt.length, "chars")
   let screeningResult: string
 
@@ -235,7 +236,11 @@ function generateReportTitle(_prefs: UserPreferences, groupName?: string): strin
   return `${prefix}${period} Report - ${date}`
 }
 
-function buildScreeningPrompt(entries: EntryWithFeed[], prefs: UserPreferences): string {
+export function buildScreeningPrompt(
+  entries: EntryWithFeed[],
+  prefs: UserPreferences,
+  youtubeInsights?: string,
+): string {
   const entryList = entries
     .map((e, i) => {
       const desc = e.description ? stripHtml(e.description).slice(0, 150) : ""
@@ -248,12 +253,14 @@ function buildScreeningPrompt(entries: EntryWithFeed[], prefs: UserPreferences):
 
   const skillsSection = formatSkillsPrompt(loadAllSkills())
 
+  const youtubeSection = youtubeInsights ? `\n${youtubeInsights}\n` : ""
+
   return `${skillsSection}
 
 Your task: Screen RSS entries and select valuable ones, and identify 1-2 "hot topics" that deserve deeper investigation.
 
 ${interestsStr}
-
+${youtubeSection}
 ## Output Format
 
 Return a JSON object (no markdown fencing, no extra text):
@@ -896,6 +903,7 @@ IMPORTANT: Output ONLY the podcast script as plain spoken text. No markdown form
 export async function generateReportToString(
   onStatus: (status: string) => void,
   groupId?: string,
+  youtubeInsights?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let fullContent = ""
@@ -907,6 +915,7 @@ export async function generateReportToString(
       () => resolve(fullContent),
       (error) => reject(new Error(error)),
       groupId,
+      youtubeInsights,
     ).catch(reject)
   })
 }
