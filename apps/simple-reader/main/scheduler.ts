@@ -27,13 +27,23 @@ export async function refreshAllFeeds() {
 
   console.info(`[scheduler] Refreshing ${feeds.length} feeds...`)
 
-  const results = await Promise.allSettled(feeds.map((feed) => refreshFeed(feed)))
-
+  const CONCURRENCY = 5
   let successCount = 0
   let errorCount = 0
-  for (const r of results) {
-    if (r.status === "fulfilled") successCount++
-    else errorCount++
+
+  for (let i = 0; i < feeds.length; i += CONCURRENCY) {
+    const batch = feeds.slice(i, i + CONCURRENCY)
+    const results = await Promise.allSettled(batch.map((feed) => refreshFeed(feed)))
+    for (const r of results) {
+      if (r.status === "fulfilled") successCount++
+      else errorCount++
+    }
+    if (feeds.length > CONCURRENCY) {
+      const done = Math.min(i + CONCURRENCY, feeds.length)
+      console.info(
+        `[scheduler] Progress: ${done}/${feeds.length} (${successCount} ok, ${errorCount} err)`,
+      )
+    }
   }
 
   console.info(`[scheduler] Done: ${successCount} success, ${errorCount} errors`)
@@ -108,10 +118,11 @@ async function refreshFeed(feed: Feed) {
 
     saveDatabase()
   } catch (error: any) {
-    console.error(`[scheduler] Error fetching ${feed.url}:`, error.message)
+    const message = error?.message || String(error)
+    console.error(`[scheduler] Error fetching ${feed.url}: ${message}`)
     execute("UPDATE feeds SET error_at = ?, error_message = ? WHERE id = ?", [
       new Date().toISOString(),
-      error.message,
+      message,
       feed.id,
     ])
   }
