@@ -125,7 +125,7 @@ export async function generateAudio(text: string, callbacks: TtsCallbacks): Prom
   const voiceSetting = {
     voice_id: prefs.ttsVoiceId || "English_Graceful_Lady",
     speed: 1,
-    vol: 1,
+    vol: 5,
     pitch: 0,
     text_normalization: true,
   }
