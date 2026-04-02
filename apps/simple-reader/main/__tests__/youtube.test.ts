@@ -4,6 +4,7 @@ import {
   buildVideoDescription,
   exchangeCode,
   getAuthUrl,
+  listChannelVideos,
   refreshAccessToken,
   setThumbnail,
   uploadVideo,
@@ -273,6 +274,118 @@ describe("youtube", () => {
       await expect(setThumbnail("vid", "/tmp/t.png", "at")).rejects.toThrow(
         "Failed to set thumbnail",
       )
+    })
+  })
+
+  describe("listChannelVideos", () => {
+    it("should fetch channel uploads and return video stats", async () => {
+      // Step 1: channels.list → get uploads playlist ID
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [{ contentDetails: { relatedPlaylists: { uploads: "UU_playlist_123" } } }],
+        }),
+      })
+
+      // Step 2: playlistItems.list → get video IDs + snippets
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              snippet: {
+                resourceId: { videoId: "vid-1" },
+                title: "YOMOO 每日AI快送 — 2026-03-25",
+                publishedAt: "2026-03-25T08:00:00Z",
+              },
+            },
+            {
+              snippet: {
+                resourceId: { videoId: "vid-2" },
+                title: "YOMOO 每日AI快送 — 2026-03-24",
+                publishedAt: "2026-03-24T08:00:00Z",
+              },
+            },
+          ],
+        }),
+      })
+
+      // Step 3: videos.list → get statistics + full snippet (description)
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: "vid-1",
+              snippet: {
+                title: "YOMOO 每日AI快送 — 2026-03-25",
+                publishedAt: "2026-03-25T08:00:00Z",
+                description:
+                  "YOMOO 每日AI快送 — 2026-03-25\n\n今日快送：3条重点新闻\n1. GPT-5 released\n2. Apple AI chip\n3. Anthropic funding\n\n🔗 网页版: https://example.com",
+              },
+              statistics: { viewCount: "12500", likeCount: "340", commentCount: "28" },
+            },
+            {
+              id: "vid-2",
+              snippet: {
+                title: "YOMOO 每日AI快送 — 2026-03-24",
+                publishedAt: "2026-03-24T08:00:00Z",
+                description:
+                  "YOMOO 每日AI快送 — 2026-03-24\n\n今日快送：2条重点新闻\n1. Google Gemini update\n2. Nvidia new GPU\n\n🔗 网页版: https://example.com",
+              },
+              statistics: { viewCount: "8200", likeCount: "210", commentCount: "15" },
+            },
+          ],
+        }),
+      })
+
+      const videos = await listChannelVideos("access-token-123", 10)
+
+      expect(videos).toHaveLength(2)
+      expect(videos[0]).toEqual({
+        videoId: "vid-1",
+        title: "YOMOO 每日AI快送 — 2026-03-25",
+        publishedAt: "2026-03-25T08:00:00Z",
+        description: expect.stringContaining("GPT-5 released"),
+        viewCount: 12500,
+        likeCount: 340,
+        commentCount: 28,
+      })
+      expect(videos[1]!.viewCount).toBe(8200)
+
+      // Verify API calls
+      const [channelsUrl] = mockFetch.mock.calls[0]
+      expect(channelsUrl).toContain("youtube.googleapis.com/youtube/v3/channels")
+      expect(channelsUrl).toContain("mine=true")
+
+      const [playlistUrl] = mockFetch.mock.calls[1]
+      expect(playlistUrl).toContain("youtube.googleapis.com/youtube/v3/playlistItems")
+      expect(playlistUrl).toContain("UU_playlist_123")
+
+      const [videosUrl] = mockFetch.mock.calls[2]
+      expect(videosUrl).toContain("youtube.googleapis.com/youtube/v3/videos")
+      expect(videosUrl).toContain("vid-1")
+      expect(videosUrl).toContain("vid-2")
+    })
+
+    it("should return empty array if channel has no uploads", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [] }),
+      })
+
+      const videos = await listChannelVideos("access-token", 10)
+      expect(videos).toEqual([])
+    })
+
+    it("should throw on API error", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        text: async () => "Forbidden",
+      })
+
+      await expect(listChannelVideos("bad-token", 10)).rejects.toThrow("Failed to list channel")
     })
   })
 

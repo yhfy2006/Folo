@@ -4,6 +4,9 @@ const OAUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 const TOKEN_URL = "https://oauth2.googleapis.com/token"
 const UPLOAD_URL = "https://www.googleapis.com/upload/youtube/v3/videos"
 const THUMBNAIL_URL = "https://www.googleapis.com/upload/youtube/v3/thumbnails/set"
+const CHANNELS_URL = "https://youtube.googleapis.com/youtube/v3/channels"
+const PLAYLIST_ITEMS_URL = "https://youtube.googleapis.com/youtube/v3/playlistItems"
+const VIDEOS_URL = "https://youtube.googleapis.com/youtube/v3/videos"
 
 const SCOPES = [
   "https://www.googleapis.com/auth/youtube.upload",
@@ -214,6 +217,74 @@ export async function setThumbnail(
   }
 
   console.info("[youtube] Thumbnail set for video:", videoId)
+}
+
+// --- Channel Analytics ---
+
+export interface ChannelVideo {
+  videoId: string
+  title: string
+  publishedAt: string
+  description: string
+  viewCount: number
+  likeCount: number
+  commentCount: number
+}
+
+export async function listChannelVideos(
+  accessToken: string,
+  maxResults = 30,
+): Promise<ChannelVideo[]> {
+  const channelsResp = await fetch(`${CHANNELS_URL}?part=contentDetails&mine=true`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!channelsResp.ok) {
+    const err = await channelsResp.text()
+    throw new Error(`Failed to list channel: HTTP ${channelsResp.status} — ${err}`)
+  }
+
+  const channelsData = await channelsResp.json()
+  if (!channelsData.items || channelsData.items.length === 0) {
+    return []
+  }
+
+  const uploadsPlaylistId = channelsData.items[0].contentDetails.relatedPlaylists.uploads as string
+
+  const playlistResp = await fetch(
+    `${PLAYLIST_ITEMS_URL}?part=snippet&playlistId=${encodeURIComponent(uploadsPlaylistId)}&maxResults=${maxResults}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  )
+  if (!playlistResp.ok) {
+    const err = await playlistResp.text()
+    throw new Error(`Failed to list playlist items: HTTP ${playlistResp.status} — ${err}`)
+  }
+
+  const playlistData = await playlistResp.json()
+  if (!playlistData.items || playlistData.items.length === 0) {
+    return []
+  }
+
+  const videoIds = playlistData.items.map((item: any) => item.snippet.resourceId.videoId as string)
+
+  const videosResp = await fetch(`${VIDEOS_URL}?part=snippet,statistics&id=${videoIds.join(",")}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!videosResp.ok) {
+    const err = await videosResp.text()
+    throw new Error(`Failed to get video details: HTTP ${videosResp.status} — ${err}`)
+  }
+
+  const videosData = await videosResp.json()
+
+  return (videosData.items || []).map((item: any) => ({
+    videoId: item.id as string,
+    title: item.snippet.title as string,
+    publishedAt: item.snippet.publishedAt as string,
+    description: item.snippet.description as string,
+    viewCount: Number(item.statistics.viewCount || 0),
+    likeCount: Number(item.statistics.likeCount || 0),
+    commentCount: Number(item.statistics.commentCount || 0),
+  }))
 }
 
 // --- Description Helper ---
