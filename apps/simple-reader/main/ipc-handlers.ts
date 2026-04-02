@@ -62,6 +62,7 @@ export function registerIpcHandlers() {
       ])
     }
 
+    saveDatabase()
     await refreshAllFeeds()
     return { groupId, groupName: fileName, feedCount: feedIds.length }
   })
@@ -95,6 +96,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle("mark-read", (_event, entryId: string) => {
     execute("UPDATE entries SET read = 1 WHERE id = ?", [entryId])
+    saveDatabase()
     return { success: true }
   })
 
@@ -106,6 +108,7 @@ export function registerIpcHandlers() {
   ipcMain.handle("delete-feed", (_event, feedId: string) => {
     execute("DELETE FROM entries WHERE feed_id = ?", [feedId])
     execute("DELETE FROM feeds WHERE id = ?", [feedId])
+    saveDatabase()
     return { success: true }
   })
 
@@ -216,6 +219,7 @@ export function registerIpcHandlers() {
 
   ipcMain.handle("delete-report", (_event, reportId: string) => {
     execute("DELETE FROM reports WHERE id = ?", [reportId])
+    saveDatabase()
     return { success: true }
   })
 
@@ -534,6 +538,7 @@ export function registerIpcHandlers() {
       name,
       Date.now(),
     ])
+    saveDatabase()
     return id
   })
 
@@ -570,6 +575,7 @@ export function registerIpcHandlers() {
       if (fields.length > 0) {
         values.push(groupId)
         execute(`UPDATE feed_groups SET ${fields.join(", ")} WHERE id = ?`, values)
+        saveDatabase()
         // Restart scheduler if pipeline_schedule was updated
         if (updates.pipeline_schedule !== undefined) {
           startPipelineScheduler()
@@ -582,6 +588,7 @@ export function registerIpcHandlers() {
     execute(`DELETE FROM feed_group_feeds WHERE group_id = ?`, [groupId])
     execute(`UPDATE reports SET group_id = NULL WHERE group_id = ?`, [groupId])
     execute(`DELETE FROM feed_groups WHERE id = ?`, [groupId])
+    saveDatabase()
   })
 
   ipcMain.handle("get-group-feeds", async (_event, groupId: string) => {
@@ -601,10 +608,12 @@ export function registerIpcHandlers() {
         feedId,
       ])
     }
+    saveDatabase()
   })
 
   ipcMain.handle("remove-feed-from-group", async (_event, groupId: string, feedId: string) => {
     execute(`DELETE FROM feed_group_feeds WHERE group_id = ? AND feed_id = ?`, [groupId, feedId])
+    saveDatabase()
   })
 }
 

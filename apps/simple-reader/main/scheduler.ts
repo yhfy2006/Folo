@@ -125,5 +125,6 @@ async function refreshFeed(feed: Feed) {
       message,
       feed.id,
     ])
+    saveDatabase()
   }
 }

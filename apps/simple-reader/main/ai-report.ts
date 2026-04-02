@@ -6,7 +6,7 @@ import { app } from "electron"
 import path from "pathe"
 
 import type { Entry, FeedGroup } from "./database"
-import { execute, queryAll, queryOne } from "./database"
+import { execute, queryAll, queryOne, saveDatabase } from "./database"
 import type { UserPreferences } from "./preferences"
 import { loadPreferences } from "./preferences"
 import { fetchArticleContent } from "./readability"
@@ -207,6 +207,7 @@ export async function generateReport(
         entry.id,
       ])
     }
+    saveDatabase()
     console.info(
       "[ai-report] Report saved:",
       reportId,
@@ -516,6 +517,7 @@ ${reportContent.slice(0, 5000)}`
       "INSERT INTO report_topics (id, report_id, group_id, topics_json, digest, created_at) VALUES (?, ?, ?, ?, ?, ?)",
       [topicId, reportId, groupId || null, JSON.stringify(parsed.topics), parsed.digest, now],
     )
+    saveDatabase()
     console.info("[ai-report] Topics extracted and saved:", parsed.topics.length, "topics")
   } catch (err) {
     console.warn("[ai-report] Topic extraction failed (non-blocking):", err)
@@ -889,6 +891,7 @@ IMPORTANT: Output ONLY the podcast script as plain spoken text. No markdown form
       "INSERT INTO reports (id, title, content, language, time_range, entry_count, type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       [scriptId, title, fullContent, prefs.language, 0, 0, "podcast", now],
     )
+    saveDatabase()
     console.info("[ai-report] Podcast script saved:", scriptId)
 
     onDone()

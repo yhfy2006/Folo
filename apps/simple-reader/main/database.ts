@@ -222,5 +222,4 @@ export function queryOne<T>(sql: string, params: any[] = []): T | undefined {
 
 export function execute(sql: string, params: any[] = []) {
   getDb().run(sql, params)
-  saveDatabase()
 }
