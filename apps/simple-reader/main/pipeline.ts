@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "pathe"
 
 import {
+  formatYouTubeInsights,
   generatePodcastScriptToString,
   generateReportToString,
   generateSeoDescription,
@@ -31,7 +32,13 @@ import {
 import type { SubtitleSegment } from "./tts"
 import { generateAudioToFile } from "./tts"
 import { downloadOGImages, renderThumbnail, renderVideo } from "./video-render"
-import { buildVideoDescription, refreshAccessToken, setThumbnail, uploadVideo } from "./youtube"
+import {
+  buildVideoDescription,
+  listChannelVideos,
+  refreshAccessToken,
+  setThumbnail,
+  uploadVideo,
+} from "./youtube"
 
 export interface PipelineResult {
   pageUrl: string
@@ -112,6 +119,27 @@ export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string
     return
   }
 
+  // Pre-stage: Fetch YouTube audience insights (non-fatal)
+  let youtubeInsights: string | undefined
+  if (prefs.youtubeEnabled && prefs.youtubeRefreshToken) {
+    try {
+      callbacks.onStatus("Fetching YouTube audience insights...")
+      const accessToken = await refreshAccessToken(
+        prefs.youtubeRefreshToken,
+        prefs.youtubeClientId,
+        prefs.youtubeClientSecret,
+      )
+      const videos = await listChannelVideos(accessToken)
+      youtubeInsights = formatYouTubeInsights(videos) || undefined
+      if (youtubeInsights) {
+        console.info("[pipeline] YouTube insights loaded:", videos.length, "videos analyzed")
+        callbacks.onStatus(`YouTube insights loaded: ${videos.length} videos analyzed`)
+      }
+    } catch (err) {
+      console.info("[pipeline] YouTube insights fetch failed (non-fatal):", err)
+    }
+  }
+
   // Stage 1: Generate AI Report
   step++
   callbacks.onStage("report")
@@ -120,9 +148,13 @@ export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string
 
   let reportContent: string
   try {
-    reportContent = await generateReportToString((status) => {
-      callbacks.onStatus(status)
-    }, groupId)
+    reportContent = await generateReportToString(
+      (status) => {
+        callbacks.onStatus(status)
+      },
+      groupId,
+      youtubeInsights,
+    )
   } catch (err) {
     callbacks.onError("report", `Report generation failed: ${err}`)
     return
