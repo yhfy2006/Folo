@@ -1011,6 +1011,65 @@ function getTopicsFromDatabase(date: string): string[] {
   }
 }
 
+export interface ShortsScript {
+  title: string
+  headline: string
+  script: string
+  newsUrl: string
+  ogImageUrl?: string
+}
+
+export function parseShortsScriptResult(result: string): ShortsScript {
+  const jsonMatch = result.match(/\{[\s\S]*\}/)
+  if (!jsonMatch) {
+    throw new Error("No JSON found in Shorts script result")
+  }
+
+  const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>
+  if (!parsed.title || !parsed.headline || !parsed.script || !parsed.newsUrl) {
+    throw new Error("Shorts script missing required fields (title, headline, script, newsUrl)")
+  }
+
+  return {
+    title: parsed.title as string,
+    headline: parsed.headline as string,
+    script: parsed.script as string,
+    newsUrl: parsed.newsUrl as string,
+    ogImageUrl: (parsed.ogImageUrl as string) || undefined,
+  }
+}
+
+export async function generateShortsScript(
+  reportContent: string,
+  onStatus: (status: string) => void,
+): Promise<ShortsScript> {
+  onStatus("Generating Shorts script...")
+
+  const prompt = `You are a viral short-video scriptwriter for "YOMOO 每日AI快送", a Chinese AI news channel.
+
+From the following daily report, select the ONE news item that is most personally relevant to average people (not niche/specialist topics). News about AI directly affecting daily life gets the most views.
+
+Write a 30-60 second spoken script in Chinese that:
+- Starts with the most shocking or surprising fact (hook in 1 second, NO greeting, NO "大家好")
+- Is punchy, direct, and conversational
+- Ends with: "关注看更多每日AI快送"
+
+Output strict JSON only, no markdown fencing:
+{
+  "title": "YouTube title, max 60 chars, provocative (e.g. 'AI接管你的电脑了！')",
+  "headline": "Bold on-screen headline, max 15 Chinese chars (e.g. 'AI接管电脑')",
+  "script": "The spoken script text, 30-60 seconds when read aloud",
+  "newsUrl": "URL of the source article from the report",
+  "ogImageUrl": "OG image URL if mentioned in the report, or null"
+}
+
+Daily report:
+${reportContent.slice(0, 5000)}`
+
+  const result = await runClaude(prompt)
+  return parseShortsScriptResult(result)
+}
+
 function stripHtml(html: string): string {
   return html
     .replaceAll(/<[^>]+>/g, "")
