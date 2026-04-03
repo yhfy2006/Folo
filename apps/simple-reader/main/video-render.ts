@@ -83,6 +83,45 @@ export async function downloadOGImages(
 }
 
 /**
+ * Download a single OG image for Shorts to Remotion's public/images/ directory.
+ * Returns the local relative path for staticFile(), or undefined if download fails.
+ */
+export async function downloadShortsOGImage(
+  imageUrl: string,
+  onStatus?: (status: string) => void,
+): Promise<string | undefined> {
+  const imagesDir = path.resolve(getVideoProjectDir(), "public", "images")
+  fs.mkdirSync(imagesDir, { recursive: true })
+
+  const localName = "shorts-og.jpg"
+  const localPath = path.resolve(imagesDir, localName)
+
+  try {
+    onStatus?.("Downloading Shorts OG image...")
+    const response = await fetch(imageUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+      },
+      redirect: "follow",
+    })
+
+    if (!response.ok || !response.body) {
+      console.info(`[video-render] Shorts OG image download failed: ${response.status}`)
+      return undefined
+    }
+
+    const fileStream = fs.createWriteStream(localPath)
+    // @ts-expect-error -- Node ReadableStream from fetch body
+    await pipeline(response.body, fileStream)
+    console.info("[video-render] Shorts OG image downloaded:", localName)
+    return `images/${localName}`
+  } catch (err) {
+    console.info(`[video-render] Shorts OG image download failed: ${err}`)
+    return undefined
+  }
+}
+
+/**
  * Render a video using Remotion CLI.
  * Spawns `npx remotion render` with the given scenes.json and audio.
  */
@@ -160,6 +199,83 @@ export function renderVideo(
 
     proc.on("error", (err) => {
       reject(new Error(`Failed to spawn Remotion: ${err.message}`))
+    })
+  })
+}
+
+/**
+ * Render a Shorts vertical video using Remotion CLI.
+ * Spawns `npx remotion render` with the ShortsVideo composition at 1080x1920.
+ */
+export function renderShorts(
+  scenesJsonPath: string,
+  audioPath: string,
+  outputPath: string,
+  options: RenderOptions = {},
+): Promise<string> {
+  const { onProgress, onStatus } = options
+
+  return new Promise((resolve, reject) => {
+    onStatus?.("Starting Shorts render...")
+
+    const videoProjectDir = getVideoProjectDir()
+    const publicDir = path.resolve(videoProjectDir, "public")
+    fs.mkdirSync(publicDir, { recursive: true })
+    const publicAudioPath = path.resolve(publicDir, "shorts.mp3")
+    fs.copyFileSync(audioPath, publicAudioPath)
+    console.info("[video-render] Copied Shorts audio to", publicAudioPath)
+
+    const args = [
+      "remotion",
+      "render",
+      getVideoEntryPoint(),
+      "ShortsVideo",
+      "--output",
+      outputPath,
+      "--props",
+      scenesJsonPath,
+      "--codec",
+      "h264",
+      "--fps",
+      "30",
+    ]
+
+    console.info("[video-render] Spawning Shorts render:", "npx", args.join(" "))
+
+    const proc = spawn("npx", args, {
+      stdio: ["pipe", "pipe", "pipe"],
+      cwd: videoProjectDir,
+    })
+
+    let stderr = ""
+
+    proc.stdout.on("data", (data: Buffer) => {
+      console.info("[video-render] shorts stdout:", data.toString().trim())
+    })
+
+    proc.stderr.on("data", (data: Buffer) => {
+      const text = data.toString()
+      stderr += text
+      const progressMatch = text.match(/(\d+)%/)
+      if (progressMatch) {
+        const pct = Number.parseInt(progressMatch[1]!, 10)
+        onProgress?.(pct)
+        onStatus?.(`Rendering Shorts: ${pct}%`)
+      }
+    })
+
+    proc.on("close", (code) => {
+      console.info("[video-render] Shorts render exited with code:", code)
+      if (code === 0) {
+        onStatus?.("Shorts render complete")
+        resolve(outputPath)
+      } else {
+        reject(new Error(`Remotion Shorts render exited with code ${code}: ${stderr}`))
+      }
+    })
+
+    proc.on("error", (err) => {
+      reject(new Error(`Failed to spawn Remotion for Shorts: ${err.message}`))
     })
   })
 }
