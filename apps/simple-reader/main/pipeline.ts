@@ -8,6 +8,7 @@ import {
   generatePodcastScriptToString,
   generateReportToString,
   generateSeoDescription,
+  generateShortsScript,
 } from "./ai-report"
 import { queryOne } from "./database"
 import { transcribeAudio } from "./deepgram"
@@ -31,7 +32,13 @@ import {
 } from "./scene-generator"
 import type { SubtitleSegment } from "./tts"
 import { generateAudioToFile } from "./tts"
-import { downloadOGImages, renderThumbnail, renderVideo } from "./video-render"
+import {
+  downloadOGImages,
+  downloadShortsOGImage,
+  renderShorts,
+  renderThumbnail,
+  renderVideo,
+} from "./video-render"
 import {
   buildVideoDescription,
   listChannelVideos,
@@ -85,9 +92,11 @@ export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string
 
   // Base stages: verify, report, podcast, audio, upload, publish = 6
   // Optional: video (alignment + render) = +1, youtube = +1
+  const shortsEnabled = youtubeEnabled && prefs.youtubeShortsEnabled
   let total = 6
   if (videoEnabled) total += 1
   if (youtubeEnabled) total += 1
+  if (shortsEnabled) total += 1
 
   let step = 0
 
@@ -405,6 +414,7 @@ export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string
       console.info("[pipeline] Thumbnail rendered:", thumbnailOutputPath)
 
       // Stage 8: YouTube Upload (if enabled)
+      let accessToken: string | undefined
       if (youtubeEnabled) {
         step++
         callbacks.onStage("youtube")
@@ -413,7 +423,7 @@ export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string
 
         try {
           // Refresh access token
-          const accessToken = await refreshAccessToken(
+          accessToken = await refreshAccessToken(
             prefs.youtubeRefreshToken,
             prefs.youtubeClientId,
             prefs.youtubeClientSecret,
@@ -455,6 +465,93 @@ export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string
           // YouTube upload failure is non-fatal for the overall pipeline
           console.info("[pipeline] YouTube upload failed (non-fatal):", err)
           callbacks.onStatus(`YouTube upload failed: ${err}`)
+        }
+      }
+
+      // Stage 9: Shorts Generation + Upload (if enabled)
+      if (shortsEnabled) {
+        step++
+        callbacks.onStage("shorts")
+        callbacks.onProgress(step, total)
+
+        try {
+          // 9a: Generate Shorts script
+          callbacks.onStatus("Generating Shorts script...")
+          const shortsScript = await generateShortsScript(reportContent, (s) =>
+            callbacks.onStatus(s),
+          )
+          console.info("[pipeline] Shorts script generated:", shortsScript.title)
+
+          // 9b: Generate Shorts audio
+          callbacks.onStatus("Generating Shorts audio...")
+          const shortsAudioResult = await generateAudioToFile(shortsScript.script, (s) =>
+            callbacks.onStatus(s),
+          )
+          const shortsAudioPath = shortsAudioResult.filePath
+          const shortsSubtitles = shortsAudioResult.subtitles
+
+          // 9c: Build Shorts scenes JSON
+          const shortsScenesData = {
+            headline: shortsScript.headline,
+            ogImagePath: undefined as string | undefined,
+            audioDuration: shortsSubtitles?.at(-1)?.end || 45,
+            fps: 30,
+            subtitles: shortsSubtitles?.map((s) => ({
+              text: s.text,
+              start: s.start,
+              end: s.end,
+            })),
+            youtubeTitle: shortsScript.title,
+          }
+
+          // 9d: Download OG image
+          if (shortsScript.ogImageUrl) {
+            const ogPath = await downloadShortsOGImage(shortsScript.ogImageUrl, (s) =>
+              callbacks.onStatus(s),
+            )
+            if (ogPath) {
+              shortsScenesData.ogImagePath = ogPath
+            }
+          }
+
+          // Write Shorts scenes JSON
+          const shortsScenesPath = path.join(tmpDir, "shorts-scenes.json")
+          fs.writeFileSync(shortsScenesPath, JSON.stringify(shortsScenesData, null, 2), "utf-8")
+
+          // 9e: Render Shorts video
+          const shortsOutputPath = path.join(tmpDir, "shorts.mp4")
+          await renderShorts(shortsScenesPath, shortsAudioPath, shortsOutputPath, {
+            onProgress: (pct) => callbacks.onStatus(`Rendering Shorts: ${pct}%`),
+            onStatus: (status) => callbacks.onStatus(status),
+          })
+
+          // 9f: Upload Shorts to YouTube
+          // accessToken is guaranteed to be set when shortsEnabled (which requires youtubeEnabled)
+          const shortsAccessToken =
+            accessToken ||
+            (await refreshAccessToken(
+              prefs.youtubeRefreshToken,
+              prefs.youtubeClientId,
+              prefs.youtubeClientSecret,
+            ))
+          callbacks.onStatus("Uploading Shorts to YouTube...")
+          const shortsVideoId = await uploadVideo({
+            accessToken: shortsAccessToken,
+            videoPath: shortsOutputPath,
+            title: shortsScript.title,
+            description: `${shortsScript.headline}\n\n完整版: ${pageUrl}\n\n#Shorts #AI #每日AI快送 #YOMOO`,
+            tags: ["Shorts", "AI", "每日AI快送", "YOMOO", "科技新闻"],
+            categoryId: "28",
+            privacyStatus: "public",
+            onProgress: (pct) => callbacks.onStatus(`Uploading Shorts: ${pct}%`),
+          })
+
+          const shortsUrl = `https://www.youtube.com/shorts/${shortsVideoId}`
+          console.info("[pipeline] Shorts uploaded:", shortsUrl)
+          callbacks.onStatus(`Shorts uploaded: ${shortsUrl}`)
+        } catch (shortsErr) {
+          console.info("[pipeline] Shorts generation failed (non-fatal):", shortsErr)
+          callbacks.onStatus(`Shorts generation skipped: ${shortsErr}`)
         }
       }
     } catch (err) {
