@@ -71,6 +71,7 @@ export const shortsStage: StageDefinition = {
   run: async (ctx: PipelineContext, callbacks: StageCallbacks): Promise<PipelineContext> => {
     const { prefs, date, pageUrl, youtubeAccessToken } = ctx
     const tmpDir = path.join(os.tmpdir(), `yomoo-video-${date}`)
+    fs.mkdirSync(tmpDir, { recursive: true })
 
     // 9a: Generate Shorts script
     callbacks.onStatus("Generating Shorts script...")

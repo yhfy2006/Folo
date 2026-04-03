@@ -32,8 +32,8 @@ export const verifyStage: StageDefinition = {
     }
 
     // Resolve group name from DB if groupId is set
-    let groupName: string | undefined
-    if (ctx.groupId) {
+    let { groupName } = ctx
+    if (ctx.groupId && !groupName) {
       const group = queryOne<{ name: string }>(`SELECT name FROM feed_groups WHERE id = ?`, [
         ctx.groupId,
       ])
@@ -41,8 +41,8 @@ export const verifyStage: StageDefinition = {
     }
 
     // Pre-fetch YouTube audience insights (non-fatal)
-    let youtubeInsights: string | undefined
-    if (prefs.youtubeEnabled && prefs.youtubeRefreshToken) {
+    let { youtubeInsights } = ctx
+    if (!youtubeInsights && prefs.youtubeEnabled && prefs.youtubeRefreshToken) {
       try {
         callbacks.onStatus("Fetching YouTube audience insights...")
         const accessToken = await refreshAccessToken(

@@ -1,5 +1,6 @@
 import fs from "node:fs"
 
+import type { ScenesJson } from "../../scene-generator"
 import { buildVideoDescription, refreshAccessToken, setThumbnail, uploadVideo } from "../../youtube"
 import type { PipelineContext } from "../context"
 import type { StageCallbacks, StageDefinition } from "../types"
@@ -22,12 +23,10 @@ export const youtubeStage: StageDefinition = {
     )
 
     // Read scenes.json to extract headlines and youtube title
-    const scenes = JSON.parse(fs.readFileSync(scenesJsonPath!, "utf-8"))
+    const scenes: ScenesJson = JSON.parse(fs.readFileSync(scenesJsonPath!, "utf-8"))
 
     // Extract headlines from scenes for description
-    const headlines = scenes.scenes
-      .filter((s: { type: string; title?: string }) => s.type === "news" && s.title)
-      .map((s: { title: string }) => s.title)
+    const headlines = scenes.scenes.filter((s) => s.type === "news" && s.title).map((s) => s.title!)
 
     const description = buildVideoDescription(date, headlines, pageUrl!, audioUrl!)
 
