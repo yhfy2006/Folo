@@ -2,9 +2,17 @@ import * as React from "react"
 import { Composition } from "remotion"
 
 import { DailyReport } from "./DailyReport"
-import { thumbnail, video } from "./styles/theme"
+import { ShortsVideo } from "./ShortsVideo"
+import { shorts, thumbnail, video } from "./styles/theme"
 import { Thumbnail } from "./Thumbnail"
-import type { ScenesData } from "./types"
+import type { ScenesData, ShortsData } from "./types"
+
+const defaultShortsProps: ShortsData = {
+  headline: "AI接管电脑",
+  audioDuration: 45,
+  fps: 30,
+  youtubeTitle: "AI接管你的电脑了！",
+}
 
 const defaultProps: ScenesData = {
   date: "2026-02-22",
@@ -58,6 +66,15 @@ export const RemotionRoot: React.FC = () => {
         width={thumbnail.width}
         height={thumbnail.height}
         defaultProps={defaultProps}
+      />
+      <Composition
+        id="ShortsVideo"
+        component={ShortsVideo}
+        durationInFrames={defaultShortsProps.audioDuration * defaultShortsProps.fps}
+        fps={shorts.fps}
+        width={shorts.width}
+        height={shorts.height}
+        defaultProps={defaultShortsProps}
       />
     </>
   )
