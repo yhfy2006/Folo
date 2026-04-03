@@ -1017,6 +1017,7 @@ export interface ShortsScript {
   script: string
   newsUrl: string
   ogImageUrl?: string
+  keyPoints: string[]
 }
 
 export function parseShortsScriptResult(result: string): ShortsScript {
@@ -1036,6 +1037,7 @@ export function parseShortsScriptResult(result: string): ShortsScript {
     script: parsed.script as string,
     newsUrl: parsed.newsUrl as string,
     ogImageUrl: (parsed.ogImageUrl as string) || undefined,
+    keyPoints: Array.isArray(parsed.keyPoints) ? (parsed.keyPoints as string[]) : [],
   }
 }
 
@@ -1060,7 +1062,8 @@ Output strict JSON only, no markdown fencing:
   "headline": "Bold on-screen headline, max 15 Chinese chars (e.g. 'AI接管电脑')",
   "script": "The spoken script text, 30-60 seconds when read aloud",
   "newsUrl": "URL of the source article from the report",
-  "ogImageUrl": "OG image URL if mentioned in the report, or null"
+  "ogImageUrl": "OG image URL if mentioned in the report, or null",
+  "keyPoints": ["3-5 short key facts/stats that appear on screen, max 10 chars each, e.g. '性能提升5x', '价格-50%', '用户破亿'"]
 }
 
 Daily report:

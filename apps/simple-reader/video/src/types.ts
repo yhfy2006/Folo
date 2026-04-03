@@ -54,11 +54,17 @@ export interface ScenesData {
   youtubeTitle?: string
 }
 
+export interface ShortsKeyPoint {
+  text: string
+  showAt: number
+}
+
 export interface ShortsData {
   headline: string
   ogImagePath?: string
   audioDuration: number
   fps: number
   subtitles?: SubtitleLine[]
+  keyPoints?: ShortsKeyPoint[]
   youtubeTitle: string
 }

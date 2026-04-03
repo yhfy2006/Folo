@@ -26,6 +26,7 @@ describe("parseShortsScriptResult", () => {
       script: "你知道吗，Claude现在可以直接操控你的Mac电脑了。关注看更多每日AI快送。",
       newsUrl: "https://example.com/article",
       ogImageUrl: "https://example.com/og.jpg",
+      keyPoints: ["直接操控Mac", "打开应用写代码", "自动发邮件"],
     })
 
     const parsed = parseShortsScriptResult(result)
@@ -36,7 +37,20 @@ describe("parseShortsScriptResult", () => {
       script: expect.stringContaining("Claude"),
       newsUrl: "https://example.com/article",
       ogImageUrl: "https://example.com/og.jpg",
+      keyPoints: ["直接操控Mac", "打开应用写代码", "自动发邮件"],
     })
+  })
+
+  it("should default keyPoints to empty array when missing", () => {
+    const result = JSON.stringify({
+      title: "Test",
+      headline: "测试",
+      script: "Test script.",
+      newsUrl: "https://example.com",
+    })
+
+    const parsed = parseShortsScriptResult(result)
+    expect(parsed.keyPoints).toEqual([])
   })
 
   it("should handle result with extra text around JSON", () => {
@@ -54,6 +68,7 @@ Some trailing text.`
     expect(parsed.headline).toBe("测试标题")
     expect(parsed.script).toBe("Test script content.")
     expect(parsed.ogImageUrl).toBeUndefined()
+    expect(parsed.keyPoints).toEqual([])
   })
 
   it("should throw on invalid result", () => {

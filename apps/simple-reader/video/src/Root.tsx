@@ -75,6 +75,9 @@ export const RemotionRoot: React.FC = () => {
         width={shorts.width}
         height={shorts.height}
         defaultProps={defaultShortsProps}
+        calculateMetadata={async ({ props }) => ({
+          durationInFrames: Math.ceil(props.audioDuration * props.fps),
+        })}
       />
     </>
   )

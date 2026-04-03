@@ -490,7 +490,10 @@ export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string
           const shortsAudioPath = shortsAudioResult.filePath
           const shortsSubtitles = shortsAudioResult.subtitles
 
-          // 9c: Build Shorts scenes JSON
+          // 9c: Match keyPoints to subtitle timestamps
+          const keyPoints = matchKeyPointsToSubtitles(shortsScript.keyPoints, shortsSubtitles || [])
+
+          // 9d: Build Shorts scenes JSON
           const shortsScenesData = {
             headline: shortsScript.headline,
             ogImagePath: undefined as string | undefined,
@@ -501,6 +504,7 @@ export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string
               start: s.start,
               end: s.end,
             })),
+            keyPoints,
             youtubeTitle: shortsScript.title,
           }
 
@@ -812,4 +816,53 @@ function parseSrtFile(srtPath: string): SubtitleSegment[] {
   }
 
   return segments
+}
+
+/**
+ * Match key points to subtitle timestamps by fuzzy keyword matching.
+ * For each key point, finds the subtitle line that best matches it
+ * and uses that subtitle's start time as the showAt timestamp.
+ */
+function matchKeyPointsToSubtitles(
+  keyPoints: string[],
+  subtitles: SubtitleSegment[],
+): Array<{ text: string; showAt: number }> {
+  if (keyPoints.length === 0 || subtitles.length === 0) return []
+
+  const result: Array<{ text: string; showAt: number }> = []
+  const usedTimes = new Set<number>()
+
+  for (const kp of keyPoints) {
+    // Extract meaningful chars from keyPoint for matching
+    const kpChars = kp.replaceAll(/[\s\p{P}]/gu, "").toLowerCase()
+    if (kpChars.length === 0) continue
+
+    let bestMatch: SubtitleSegment | undefined
+    let bestScore = 0
+
+    for (const sub of subtitles) {
+      const subChars = sub.text.replaceAll(/[\s\p{P}]/gu, "").toLowerCase()
+      // Count how many chars from keyPoint appear in this subtitle
+      let score = 0
+      for (const char of kpChars) {
+        if (subChars.includes(char)) score++
+      }
+      // Normalize by keyPoint length
+      const normalizedScore = score / kpChars.length
+      if (normalizedScore > bestScore && !usedTimes.has(sub.start)) {
+        bestScore = normalizedScore
+        bestMatch = sub
+      }
+    }
+
+    // Only include if match quality is reasonable (>40% char overlap)
+    if (bestMatch && bestScore > 0.4) {
+      result.push({ text: kp, showAt: bestMatch.start })
+      usedTimes.add(bestMatch.start)
+    }
+  }
+
+  // Sort by appearance time
+  result.sort((a, b) => a.showAt - b.showAt)
+  return result
 }
