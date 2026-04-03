@@ -21,6 +21,7 @@ export interface UserPreferences {
   youtubeClientSecret: string
   youtubeRefreshToken: string
   youtubeEnabled: boolean
+  youtubeShortsEnabled: boolean
 }
 
 const DEFAULT_PREFERENCES: UserPreferences = {
@@ -41,6 +42,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   youtubeClientSecret: "",
   youtubeRefreshToken: "",
   youtubeEnabled: false,
+  youtubeShortsEnabled: true,
 }
 
 function getPreferencesPath(): string {
