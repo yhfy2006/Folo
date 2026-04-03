@@ -53,3 +53,12 @@ export interface ScenesData {
   thumbnailTitle?: string
   youtubeTitle?: string
 }
+
+export interface ShortsData {
+  headline: string
+  ogImagePath?: string
+  audioDuration: number
+  fps: number
+  subtitles?: SubtitleLine[]
+  youtubeTitle: string
+}

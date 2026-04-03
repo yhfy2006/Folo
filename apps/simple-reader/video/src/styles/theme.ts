@@ -30,3 +30,9 @@ export const thumbnail = {
   width: 1280,
   height: 720,
 } as const
+
+export const shorts = {
+  width: 1080,
+  height: 1920,
+  fps: 30,
+} as const
