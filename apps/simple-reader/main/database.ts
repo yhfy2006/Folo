@@ -61,6 +61,16 @@ export interface TopicEntry {
   summary: string
 }
 
+export interface VideoUpload {
+  id: string
+  video_id: string
+  type: string // 'video' | 'shorts'
+  title: string | null
+  date: string
+  group_id: string | null
+  created_at: number
+}
+
 // Database singleton
 let db: SqlJsDatabase | null = null
 let dbPath = ""
@@ -163,6 +173,19 @@ export async function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_report_topics_report ON report_topics(report_id);
     CREATE INDEX IF NOT EXISTS idx_report_topics_group ON report_topics(group_id);
     CREATE INDEX IF NOT EXISTS idx_report_topics_created ON report_topics(created_at);
+
+    CREATE TABLE IF NOT EXISTS video_uploads (
+      id TEXT PRIMARY KEY,
+      video_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      title TEXT,
+      date TEXT NOT NULL,
+      group_id TEXT,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_video_uploads_video_id ON video_uploads(video_id);
+    CREATE INDEX IF NOT EXISTS idx_video_uploads_date ON video_uploads(date);
   `)
 
   // Migrate: add type column if missing
