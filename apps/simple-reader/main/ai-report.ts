@@ -1083,7 +1083,11 @@ export async function generateShortsScripts(
       ? `Output a JSON array of ${count} objects, no markdown fencing:\n[\n  { ... },\n  { ... }\n]`
       : "Output strict JSON only, no markdown fencing:"
 
-  const prompt = `You are an elite viral short-video scriptwriter for "YOMOO 每日AI快送", a Chinese AI/tech news channel on YouTube Shorts.
+  const skillsSection = formatSkillsPrompt(loadAllSkills())
+
+  const prompt = `${skillsSection}
+
+You are an elite viral short-video scriptwriter for "YOMOO 每日AI快送", a Chinese AI/tech news channel on YouTube Shorts.
 
 From the following daily report, ${countInstruction} Prioritize: AI tools that non-technical users will encounter soon, major company announcements, surprising statistics, or controversial changes.
 ${exclusionClause}
