@@ -2,6 +2,7 @@ import type { PipelineContext } from "./context"
 
 export type StageName =
   | "verify"
+  | "reflect"
   | "report"
   | "podcast"
   | "audio"
