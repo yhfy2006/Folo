@@ -229,6 +229,7 @@ export interface ChannelVideo {
   viewCount: number
   likeCount: number
   commentCount: number
+  duration: string // ISO 8601 e.g. "PT5M30S"
 }
 
 export async function listChannelVideos(
@@ -266,9 +267,12 @@ export async function listChannelVideos(
 
   const videoIds = playlistData.items.map((item: any) => item.snippet.resourceId.videoId as string)
 
-  const videosResp = await fetch(`${VIDEOS_URL}?part=snippet,statistics&id=${videoIds.join(",")}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
+  const videosResp = await fetch(
+    `${VIDEOS_URL}?part=snippet,statistics,contentDetails&id=${videoIds.join(",")}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  )
   if (!videosResp.ok) {
     const err = await videosResp.text()
     throw new Error(`Failed to get video details: HTTP ${videosResp.status} — ${err}`)
@@ -284,6 +288,7 @@ export async function listChannelVideos(
     viewCount: Number(item.statistics.viewCount || 0),
     likeCount: Number(item.statistics.likeCount || 0),
     commentCount: Number(item.statistics.commentCount || 0),
+    duration: (item.contentDetails?.duration as string) || "PT0S",
   }))
 }
 
@@ -308,4 +313,16 @@ export function buildVideoDescription(
   desc += `#AI #每日AI快送 #YOMOO #科技新闻`
 
   return desc
+}
+
+/**
+ * Parse ISO 8601 duration (e.g. "PT5M30S", "PT45S") to total seconds.
+ */
+export function parseDuration(iso: string): number {
+  const match = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/)
+  if (!match) return 0
+  const hours = Number(match[1] || 0)
+  const minutes = Number(match[2] || 0)
+  const seconds = Number(match[3] || 0)
+  return hours * 3600 + minutes * 60 + seconds
 }

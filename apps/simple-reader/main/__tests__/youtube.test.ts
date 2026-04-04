@@ -5,6 +5,7 @@ import {
   exchangeCode,
   getAuthUrl,
   listChannelVideos,
+  parseDuration,
   refreshAccessToken,
   setThumbnail,
   uploadVideo,
@@ -324,6 +325,7 @@ describe("youtube", () => {
                   "YOMOO 每日AI快送 — 2026-03-25\n\n今日快送：3条重点新闻\n1. GPT-5 released\n2. Apple AI chip\n3. Anthropic funding\n\n🔗 网页版: https://example.com",
               },
               statistics: { viewCount: "12500", likeCount: "340", commentCount: "28" },
+              contentDetails: { duration: "PT10M5S" },
             },
             {
               id: "vid-2",
@@ -334,6 +336,7 @@ describe("youtube", () => {
                   "YOMOO 每日AI快送 — 2026-03-24\n\n今日快送：2条重点新闻\n1. Google Gemini update\n2. Nvidia new GPU\n\n🔗 网页版: https://example.com",
               },
               statistics: { viewCount: "8200", likeCount: "210", commentCount: "15" },
+              contentDetails: { duration: "PT8M30S" },
             },
           ],
         }),
@@ -350,6 +353,7 @@ describe("youtube", () => {
         viewCount: 12500,
         likeCount: 340,
         commentCount: 28,
+        duration: "PT10M5S",
       })
       expect(videos[1]!.viewCount).toBe(8200)
 
@@ -415,6 +419,25 @@ describe("youtube", () => {
       expect(desc).toContain("1. One headline")
       expect(desc).toContain("https://daily.yomoo.net/episodes/2026-02-22/index.html")
       expect(desc).not.toContain("undefined")
+    })
+  })
+
+  describe("parseDuration", () => {
+    it("parses minutes and seconds", () => {
+      expect(parseDuration("PT5M30S")).toBe(330)
+    })
+
+    it("parses seconds only", () => {
+      expect(parseDuration("PT45S")).toBe(45)
+    })
+
+    it("parses hours, minutes, seconds", () => {
+      expect(parseDuration("PT1H2M3S")).toBe(3723)
+    })
+
+    it("returns 0 for empty or invalid", () => {
+      expect(parseDuration("PT0S")).toBe(0)
+      expect(parseDuration("")).toBe(0)
     })
   })
 })
