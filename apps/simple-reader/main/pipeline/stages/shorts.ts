@@ -3,7 +3,7 @@ import os from "node:os"
 
 import path from "pathe"
 
-import { generateShortsScript } from "../../ai-report"
+import { generateShortsScripts } from "../../ai-report"
 import type { SubtitleSegment } from "../../tts"
 import { generateAudioToFile } from "../../tts"
 import { copyShortsBgm, downloadShortsOGImage, renderShorts } from "../../video-render"
@@ -56,14 +56,14 @@ function matchKeyPointsToSubtitles(
 }
 
 /**
- * Generate, render, and optionally upload a single Shorts video.
+ * Render and optionally upload a single Shorts video from a pre-generated script.
  * Returns the Shorts URL (YouTube or local path if skipUpload).
  */
-async function generateOneShorts(
+async function renderAndUploadOneShorts(
   ctx: PipelineContext,
   callbacks: StageCallbacks,
   index: number,
-  excludeTopics: string[],
+  shortsScript: import("../../ai-report").ShortsScript,
   accessToken: string | undefined,
 ): Promise<{ url: string; title: string }> {
   const { prefs, date, pageUrl } = ctx
@@ -71,16 +71,9 @@ async function generateOneShorts(
   fs.mkdirSync(tmpDir, { recursive: true })
   const suffix = index === 0 ? "" : `-${index + 1}`
 
-  // 1. Generate script (exclude already-used topics)
-  callbacks.onStatus(`[${index + 1}] Generating Shorts script...`)
-  const shortsScript = await generateShortsScript(
-    ctx.reportContent!,
-    (s) => callbacks.onStatus(`[${index + 1}] ${s}`),
-    excludeTopics.length > 0 ? excludeTopics : undefined,
-  )
-  console.info(`[shorts] #${index + 1} script generated: ${shortsScript.title}`)
+  console.info(`[shorts] #${index + 1} script: ${shortsScript.title}`)
 
-  // 2. Generate audio
+  // 1. Generate audio
   callbacks.onStatus(`[${index + 1}] Generating Shorts audio...`)
   const shortsAudioResult = await generateAudioToFile(shortsScript.script, (s) =>
     callbacks.onStatus(`[${index + 1}] ${s}`),
@@ -164,14 +157,10 @@ export const shortsStage: StageDefinition = {
   name: "shorts",
   label: "Generate & Upload YouTube Shorts",
   shouldRun: (ctx: PipelineContext) =>
-    !!ctx.videoPath &&
-    ctx.prefs.youtubeEnabled &&
-    !!ctx.prefs.youtubeRefreshToken &&
-    ctx.prefs.youtubeShortsEnabled,
+    ctx.prefs.youtubeEnabled && !!ctx.prefs.youtubeRefreshToken && ctx.prefs.youtubeShortsEnabled,
   run: async (ctx: PipelineContext, callbacks: StageCallbacks): Promise<PipelineContext> => {
     const count = Math.max(1, ctx.prefs.youtubeShortsCount || 1)
     const shortsUrls: string[] = []
-    const excludeTopics: string[] = []
 
     // Get access token once for all uploads
     let accessToken = ctx.youtubeAccessToken
@@ -183,20 +172,26 @@ export const shortsStage: StageDefinition = {
       )
     }
 
-    for (let i = 0; i < count; i++) {
-      if (count > 1) {
-        callbacks.onStatus(`Generating Shorts ${i + 1}/${count}...`)
+    // Generate all scripts in a single Claude CLI call
+    callbacks.onStatus(`Generating ${count} Shorts scripts...`)
+    const scripts = await generateShortsScripts(ctx.reportContent!, count, (s) =>
+      callbacks.onStatus(s),
+    )
+    console.info(`[shorts] Generated ${scripts.length} scripts in one call`)
+
+    // Render and upload each one
+    for (let i = 0; i < scripts.length; i++) {
+      if (scripts.length > 1) {
+        callbacks.onStatus(`Processing Shorts ${i + 1}/${scripts.length}...`)
       }
 
       try {
-        const result = await generateOneShorts(ctx, callbacks, i, excludeTopics, accessToken)
+        const result = await renderAndUploadOneShorts(ctx, callbacks, i, scripts[i]!, accessToken)
         shortsUrls.push(result.url)
-        excludeTopics.push(result.title)
       } catch (err) {
-        // Individual Shorts failure is non-fatal when generating multiple
         console.info(`[shorts] #${i + 1} failed (non-fatal):`, err)
         callbacks.onStatus(`Shorts #${i + 1} failed: ${err}`)
-        if (count === 1) throw err
+        if (scripts.length === 1) throw err
       }
     }
 

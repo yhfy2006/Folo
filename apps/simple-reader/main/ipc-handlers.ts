@@ -375,59 +375,73 @@ export function registerIpcHandlers() {
 
     try {
       const { runFrom } = await import("./pipeline")
-      const { createContext } = await import("./pipeline/context")
+      const { createContext, loadContext } = await import("./pipeline/context")
       const { getGitHubPagesUrl } = await import("./github")
 
       const prefs = loadPreferences()
       const date = new Date().toISOString().slice(0, 10)
 
-      // Load report and podcast from DB
-      const report = queryOne<{ content: string }>(
-        "SELECT content FROM reports WHERE type = 'report' AND title LIKE ? ORDER BY created_at DESC LIMIT 1",
-        [`%${date}%`],
-      )
-      const podcast = queryOne<{ content: string }>(
-        "SELECT content FROM reports WHERE type = 'podcast' AND title LIKE ? ORDER BY created_at DESC LIMIT 1",
-        [`%${date}%`],
-      )
-      if (!report?.content)
-        return { success: false, error: `No report found for ${date}. Run full pipeline first.` }
-      if (!podcast?.content)
-        return {
-          success: false,
-          error: `No podcast script found for ${date}. Run full pipeline first.`,
+      // Try to restore context from pipeline snapshot (preserves ttsSubtitles from MiniMax)
+      const snapshotPath = path.join(os.tmpdir(), `yomoo-video-${date}`, "pipeline-context.json")
+      let ctx: import("./pipeline/context").PipelineContext
+
+      if (fs.existsSync(snapshotPath)) {
+        console.info("[ipc] Restoring pipeline context from snapshot:", snapshotPath)
+        ctx = loadContext(snapshotPath)
+        if (ctx.ttsSubtitles?.length) {
+          console.info(`[ipc] Restored ${ctx.ttsSubtitles.length} MiniMax TTS subtitles`)
         }
+      } else {
+        console.info("[ipc] No snapshot found, building context from DB")
 
-      // Find audio file
-      const audioDir = path.join(
-        process.env.HOME || os.homedir(),
-        "Library",
-        "Application Support",
-        "simple-reader",
-        "audio",
-      )
-      const audioFiles = fs.existsSync(audioDir)
-        ? fs
-            .readdirSync(audioDir)
-            .filter((f) => f.endsWith(".mp3"))
-            .sort()
-            .reverse()
-        : []
-      if (audioFiles.length === 0)
-        return { success: false, error: "No audio file found. Run full pipeline first." }
+        // Load report and podcast from DB
+        const report = queryOne<{ content: string }>(
+          "SELECT content FROM reports WHERE type = 'report' AND title LIKE ? ORDER BY created_at DESC LIMIT 1",
+          [`%${date}%`],
+        )
+        const podcast = queryOne<{ content: string }>(
+          "SELECT content FROM reports WHERE type = 'podcast' AND title LIKE ? ORDER BY created_at DESC LIMIT 1",
+          [`%${date}%`],
+        )
+        if (!report?.content)
+          return { success: false, error: `No report found for ${date}. Run full pipeline first.` }
+        if (!podcast?.content)
+          return {
+            success: false,
+            error: `No podcast script found for ${date}. Run full pipeline first.`,
+          }
 
-      const owner = prefs.githubOwner || "YOMOO-LLC"
+        // Find audio file
+        const audioDir = path.join(
+          process.env.HOME || os.homedir(),
+          "Library",
+          "Application Support",
+          "simple-reader",
+          "audio",
+        )
+        const audioFiles = fs.existsSync(audioDir)
+          ? fs
+              .readdirSync(audioDir)
+              .filter((f) => f.endsWith(".mp3"))
+              .sort()
+              .reverse()
+          : []
+        if (audioFiles.length === 0)
+          return { success: false, error: "No audio file found. Run full pipeline first." }
 
-      const ctx = createContext({
-        date,
-        prefs,
-        owner,
-        reportContent: report.content,
-        podcastScript: podcast.content,
-        audioFilePath: path.join(audioDir, audioFiles[0]!),
-        pageUrl: getGitHubPagesUrl(owner, date),
-        audioUrl: `https://github.com/${owner}/yomoo-daily/releases/download/v${date}/yomoo-${date}.mp3`,
-      })
+        const owner = prefs.githubOwner || "YOMOO-LLC"
+
+        ctx = createContext({
+          date,
+          prefs,
+          owner,
+          reportContent: report.content,
+          podcastScript: podcast.content,
+          audioFilePath: path.join(audioDir, audioFiles[0]!),
+          pageUrl: getGitHubPagesUrl(owner, date),
+          audioUrl: `https://github.com/${owner}/yomoo-daily/releases/download/v${date}/yomoo-${date}.mp3`,
+        })
+      }
 
       await runFrom("video", ctx, {
         onStage: (stage) => {

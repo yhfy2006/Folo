@@ -77,8 +77,7 @@ const skipUpload = process.argv.includes("--skip-upload")
 const ctx = createContext({
   date,
   reportContent,
-  pageUrl: `https://yomoo-llc.github.io/yomoo-daily/episodes/${date}/`,
-  videoPath: "/tmp/placeholder-video.mp4", // needed for shouldRun check
+  pageUrl: `https://daily.yomoo.net/episodes/${date}/index.html`,
   skipUpload,
 })
 

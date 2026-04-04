@@ -16,6 +16,18 @@ function getVideoEntryPoint(): string {
   return path.resolve(getVideoProjectDir(), "src", "index.ts")
 }
 
+/** Resolve the remotion CLI binary by walking up from the video project */
+function getRemotionBin(): string {
+  let dir = getVideoProjectDir()
+  while (dir !== path.dirname(dir)) {
+    const bin = path.resolve(dir, "node_modules", ".bin", "remotion")
+    if (fs.existsSync(bin)) return bin
+    dir = path.dirname(dir)
+  }
+  // Fallback — let PATH resolve it
+  return "remotion"
+}
+
 interface RenderOptions {
   onProgress?: (pct: number) => void
   onStatus?: (status: string) => void
@@ -144,8 +156,8 @@ export function renderVideo(
     fs.copyFileSync(audioPath, publicAudioPath)
     console.info("[video-render] Copied audio to", publicAudioPath)
 
+    const remotionBin = getRemotionBin()
     const args = [
-      "remotion",
       "render",
       getVideoEntryPoint(),
       "DailyReport",
@@ -159,9 +171,9 @@ export function renderVideo(
       "30",
     ]
 
-    console.info("[video-render] Spawning:", "npx", args.join(" "), "in", videoProjectDir)
+    console.info("[video-render] Spawning:", remotionBin, args.join(" "), "in", videoProjectDir)
 
-    const proc = spawn("npx", args, {
+    const proc = spawn(remotionBin, args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: videoProjectDir,
     })
@@ -239,8 +251,8 @@ export function renderShorts(
     fs.copyFileSync(audioPath, publicAudioPath)
     console.info("[video-render] Copied Shorts audio to", publicAudioPath)
 
+    const remotionBin = getRemotionBin()
     const args = [
-      "remotion",
       "render",
       getVideoEntryPoint(),
       "ShortsVideo",
@@ -254,9 +266,9 @@ export function renderShorts(
       "30",
     ]
 
-    console.info("[video-render] Spawning Shorts render:", "npx", args.join(" "))
+    console.info("[video-render] Spawning Shorts render:", remotionBin, args.join(" "))
 
-    const proc = spawn("npx", args, {
+    const proc = spawn(remotionBin, args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: videoProjectDir,
     })
@@ -308,8 +320,8 @@ export function renderThumbnail(
   return new Promise((resolve, reject) => {
     onStatus?.("Rendering thumbnail...")
 
+    const remotionBin = getRemotionBin()
     const args = [
-      "remotion",
       "still",
       getVideoEntryPoint(),
       "Thumbnail",
@@ -324,9 +336,15 @@ export function renderThumbnail(
     ]
 
     const videoProjectDir = getVideoProjectDir()
-    console.info("[video-render] Spawning thumbnail:", "npx", args.join(" "), "in", videoProjectDir)
+    console.info(
+      "[video-render] Spawning thumbnail:",
+      remotionBin,
+      args.join(" "),
+      "in",
+      videoProjectDir,
+    )
 
-    const proc = spawn("npx", args, {
+    const proc = spawn(remotionBin, args, {
       stdio: ["pipe", "pipe", "pipe"],
       cwd: videoProjectDir,
     })

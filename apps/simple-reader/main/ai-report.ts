@@ -1023,19 +1023,24 @@ export interface ShortsScript {
 export function parseShortsScriptResult(result: string): ShortsScript {
   const jsonMatch = result.match(/\{[\s\S]*\}/)
   if (!jsonMatch) {
-    throw new Error("No JSON found in Shorts script result")
+    throw new Error(`No JSON found in Shorts script result. Raw output:\n${result.slice(0, 500)}`)
   }
 
   const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>
-  if (!parsed.title || !parsed.headline || !parsed.script || !parsed.newsUrl) {
-    throw new Error("Shorts script missing required fields (title, headline, script, newsUrl)")
+  const missing = ["title", "headline", "script"].filter((k) => !parsed[k])
+  if (missing.length > 0) {
+    console.error("[shorts] Parsed JSON keys:", Object.keys(parsed))
+    console.error("[shorts] Parsed JSON:", JSON.stringify(parsed).slice(0, 500))
+    throw new Error(
+      `Shorts script missing required fields: ${missing.join(", ")}. Got keys: ${Object.keys(parsed).join(", ")}`,
+    )
   }
 
   return {
     title: parsed.title as string,
     headline: parsed.headline as string,
     script: parsed.script as string,
-    newsUrl: parsed.newsUrl as string,
+    newsUrl: (parsed.newsUrl as string) || "",
     ogImageUrl: (parsed.ogImageUrl as string) || undefined,
     keyPoints: Array.isArray(parsed.keyPoints) ? (parsed.keyPoints as string[]) : [],
   }
@@ -1046,16 +1051,41 @@ export async function generateShortsScript(
   onStatus: (status: string) => void,
   excludeTopics?: string[],
 ): Promise<ShortsScript> {
-  onStatus("Generating Shorts script...")
+  const scripts = await generateShortsScripts(reportContent, 1, onStatus, excludeTopics)
+  return scripts[0]!
+}
+
+/**
+ * Generate multiple Shorts scripts in a single Claude CLI call.
+ * This avoids spawning multiple CLI processes that may conflict with
+ * an active Claude session, and lets the LLM pick distinct topics naturally.
+ */
+export async function generateShortsScripts(
+  reportContent: string,
+  count: number,
+  onStatus: (status: string) => void,
+  excludeTopics?: string[],
+): Promise<ShortsScript[]> {
+  onStatus(`Generating ${count} Shorts script${count > 1 ? "s" : ""}...`)
 
   const exclusionClause =
     excludeTopics && excludeTopics.length > 0
-      ? `\n\nIMPORTANT: Do NOT select any of these topics (already used):\n${excludeTopics.map((t) => `- ${t}`).join("\n")}\nPick a DIFFERENT news item.\n`
+      ? `\n\nIMPORTANT: Do NOT select any of these topics (already used):\n${excludeTopics.map((t) => `- ${t}`).join("\n")}\nPick DIFFERENT news items.\n`
       : ""
+
+  const countInstruction =
+    count > 1
+      ? `Select the ${count} DIFFERENT news items that will get the most views. Each must cover a DIFFERENT topic.`
+      : "Select the ONE news item that will get the most views."
+
+  const outputInstruction =
+    count > 1
+      ? `Output a JSON array of ${count} objects, no markdown fencing:\n[\n  { ... },\n  { ... }\n]`
+      : "Output strict JSON only, no markdown fencing:"
 
   const prompt = `You are an elite viral short-video scriptwriter for "YOMOO 每日AI快送", a Chinese AI/tech news channel on YouTube Shorts.
 
-From the following daily report, select the ONE news item that will get the most views. Prioritize: AI tools that non-technical users will encounter soon, major company announcements, surprising statistics, or controversial changes.
+From the following daily report, ${countInstruction} Prioritize: AI tools that non-technical users will encounter soon, major company announcements, surprising statistics, or controversial changes.
 ${exclusionClause}
 SCRIPT RULES (40-50 seconds when read aloud at normal pace):
 
@@ -1070,17 +1100,17 @@ SCRIPT RULES (40-50 seconds when read aloud at normal pace):
    - Insert a PATTERN BREAK at ~15 seconds: a surprising stat, a rhetorical question, or "但关键是..."
    - Keep sentences short (under 25 chars each). This helps TTS pacing.
 
-3. ENDING: Rotate between these CTA styles (pick one):
+3. ENDING: Rotate between these CTA styles (pick one, use a DIFFERENT style for each script):
    - "你觉得呢？评论区告诉我，关注YOMOO看更多AI快送"
    - "保存这条，以后会用到。关注YOMOO不错过每日AI快送"
    - "点个关注，明天还有更劲爆的。YOMOO每日AI快送"
 
-Output strict JSON only, no markdown fencing:
+${outputInstruction}
 {
   "title": "YouTube title, max 35 Chinese chars, use number or superlative (e.g. '3个你必须知道的AI更新', 'AI刚刚学会了最可怕的技能')",
   "headline": "Bold on-screen headline, max 12 Chinese chars, punchy (e.g. 'AI接管电脑', 'Copilot大升级')",
   "script": "The spoken script text, 40-50 seconds when read aloud",
-  "newsUrl": "URL of the source article from the report",
+  "newsUrl": "URL of the source article from the report, or null",
   "ogImageUrl": "OG image URL if mentioned in the report, or null",
   "keyPoints": ["3-4 short key facts/stats shown on screen, max 8 chars each, e.g. '速度快5倍', '免费使用', '用户破亿'"]
 }
@@ -1089,7 +1119,38 @@ Daily report:
 ${reportContent.slice(0, 5000)}`
 
   const result = await runClaude(prompt)
-  return parseShortsScriptResult(result)
+
+  if (count === 1) {
+    return [parseShortsScriptResult(result)]
+  }
+
+  // Parse array response
+  const arrayMatch = result.match(/\[[\s\S]*\]/)
+  if (arrayMatch) {
+    const parsed = JSON.parse(arrayMatch[0]) as Array<Record<string, unknown>>
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed
+        .map((item) => {
+          const missing = ["title", "headline", "script"].filter((k) => !item[k])
+          if (missing.length > 0) {
+            console.error("[shorts] Skipping item with missing fields:", missing, Object.keys(item))
+            return null
+          }
+          return {
+            title: item.title as string,
+            headline: item.headline as string,
+            script: item.script as string,
+            newsUrl: (item.newsUrl as string) || "",
+            ogImageUrl: (item.ogImageUrl as string) || undefined,
+            keyPoints: Array.isArray(item.keyPoints) ? (item.keyPoints as string[]) : [],
+          }
+        })
+        .filter((s): s is ShortsScript => s !== null)
+    }
+  }
+
+  // Fallback: try parsing as single object
+  return [parseShortsScriptResult(result)]
 }
 
 function stripHtml(html: string): string {

@@ -8,9 +8,12 @@ import type { StageCallbacks, StageDefinition } from "../types"
 export const youtubeStage: StageDefinition = {
   name: "youtube",
   label: "Upload to YouTube",
-  shouldRun: (ctx: PipelineContext) =>
-    !!ctx.videoPath && ctx.prefs.youtubeEnabled && !!ctx.prefs.youtubeRefreshToken,
+  shouldRun: (ctx: PipelineContext) => ctx.prefs.youtubeEnabled && !!ctx.prefs.youtubeRefreshToken,
   run: async (ctx: PipelineContext, callbacks: StageCallbacks): Promise<PipelineContext> => {
+    if (!ctx.videoPath) {
+      throw new Error("No video file available — video stage may have failed")
+    }
+
     callbacks.onStatus("Uploading to YouTube...")
 
     const { prefs, date, videoPath, thumbnailPath, scenesJsonPath, pageUrl, audioUrl } = ctx

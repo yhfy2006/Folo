@@ -34,13 +34,15 @@ vi.mock("../../preferences", () => ({
 
 // Mock external services
 vi.mock("../../ai-report", () => ({
-  generateShortsScript: vi.fn(async () => ({
-    title: "AI自动写代码了！GitHub Copilot大升级",
-    headline: "Copilot大升级",
-    script: "你知道吗，GitHub Copilot 现在可以自动写代码了。关注看更多每日AI快送。",
-    ogImageUrl: "https://example.com/og.jpg",
-    keyPoints: ["自动写代码", "实时补全", "多语言支持"],
-  })),
+  generateShortsScripts: vi.fn(async () => [
+    {
+      title: "AI自动写代码了！GitHub Copilot大升级",
+      headline: "Copilot大升级",
+      script: "你知道吗，GitHub Copilot 现在可以自动写代码了。关注看更多每日AI快送。",
+      ogImageUrl: "https://example.com/og.jpg",
+      keyPoints: ["自动写代码", "实时补全", "多语言支持"],
+    },
+  ]),
 }))
 
 vi.mock("../../tts", () => ({
@@ -80,19 +82,12 @@ describe("shorts stage in isolation", () => {
     })
 
     expect(result.shortsUrl).toBe("https://www.youtube.com/shorts/mock-video-id")
-    expect(statuses).toContain("[1] Generating Shorts script...")
+    expect(statuses.some((s) => s.includes("Generating") && s.includes("scripts"))).toBe(true)
     expect(statuses).toContain("[1] Generating Shorts audio...")
   })
 
-  it("shouldRun returns true when video + youtube + shorts all enabled", () => {
-    const ctx = createContext({
-      videoPath: "/tmp/video.mp4",
-    })
-    expect(shortsStage.shouldRun(ctx)).toBe(true)
-  })
-
-  it("shouldRun returns false when no video was generated", () => {
+  it("shouldRun returns true when youtube + shorts enabled", () => {
     const ctx = createContext()
-    expect(shortsStage.shouldRun(ctx)).toBe(false)
+    expect(shortsStage.shouldRun(ctx)).toBe(true)
   })
 })
