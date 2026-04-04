@@ -77,6 +77,7 @@ describe("formatYouTubeInsights", () => {
         viewCount: 12500,
         likeCount: 340,
         commentCount: 28,
+        duration: "PT8M30S",
       },
       {
         videoId: "v2",
@@ -87,6 +88,7 @@ describe("formatYouTubeInsights", () => {
         viewCount: 8200,
         likeCount: 210,
         commentCount: 15,
+        duration: "PT7M0S",
       },
     ]
 
@@ -113,6 +115,7 @@ describe("formatYouTubeInsights", () => {
       viewCount: 1000 - i * 50,
       likeCount: 100,
       commentCount: 10,
+      duration: "PT5M0S",
     }))
 
     const result = formatYouTubeInsights(videos)
@@ -161,6 +164,9 @@ describe("buildScreeningPrompt with youtubeInsights", () => {
       youtubeClientSecret: "",
       youtubeRefreshToken: "",
       youtubeEnabled: false,
+      youtubeShortsEnabled: false,
+      youtubeShortsCount: 1,
+      shortsBgmPath: "",
     }
 
     const youtubeInsights =
@@ -210,6 +216,9 @@ describe("buildScreeningPrompt with youtubeInsights", () => {
       youtubeClientSecret: "",
       youtubeRefreshToken: "",
       youtubeEnabled: false,
+      youtubeShortsEnabled: false,
+      youtubeShortsCount: 1,
+      shortsBgmPath: "",
     }
 
     const prompt = buildScreeningPrompt(entries, prefs)
@@ -239,6 +248,7 @@ describe("formatYouTubeInsights with database fallback", () => {
         viewCount: 10000,
         likeCount: 200,
         commentCount: 20,
+        duration: "PT8M0S",
       },
     ]
 
@@ -262,6 +272,7 @@ describe("formatYouTubeInsights with database fallback", () => {
         viewCount: 5000,
         likeCount: 100,
         commentCount: 5,
+        duration: "PT6M0S",
       },
     ]
 
