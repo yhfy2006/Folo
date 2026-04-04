@@ -42,15 +42,16 @@ export const verifyStage: StageDefinition = {
 
     // Pre-fetch YouTube audience insights (non-fatal)
     let { youtubeInsights } = ctx
+    let youtubeAccessToken: string | undefined
     if (!youtubeInsights && prefs.youtubeEnabled && prefs.youtubeRefreshToken) {
       try {
         callbacks.onStatus("Fetching YouTube audience insights...")
-        const accessToken = await refreshAccessToken(
+        youtubeAccessToken = await refreshAccessToken(
           prefs.youtubeRefreshToken,
           prefs.youtubeClientId,
           prefs.youtubeClientSecret,
         )
-        const videos = await listChannelVideos(accessToken)
+        const videos = await listChannelVideos(youtubeAccessToken)
         youtubeInsights = formatYouTubeInsights(videos) || undefined
         if (youtubeInsights) {
           console.info("[verify] YouTube insights loaded:", videos.length, "videos analyzed")
@@ -61,6 +62,6 @@ export const verifyStage: StageDefinition = {
       }
     }
 
-    return { ...ctx, owner, groupName, youtubeInsights }
+    return { ...ctx, owner, groupName, youtubeInsights, youtubeAccessToken }
   },
 }
