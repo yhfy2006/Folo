@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "pathe"
 
 import { generateShortsScripts } from "../../ai-report"
+import { execute, saveDatabase } from "../../database"
 import type { SubtitleSegment } from "../../tts"
 import { generateAudioToFile } from "../../tts"
 import { copyShortsBgm, downloadShortsOGImage, renderShorts } from "../../video-render"
@@ -150,6 +151,20 @@ async function renderAndUploadOneShorts(
   const url = `https://www.youtube.com/shorts/${videoId}`
   console.info(`[shorts] #${index + 1} uploaded: ${url}`)
   callbacks.onStatus(`[${index + 1}] Shorts uploaded: ${url}`)
+
+  // Record upload for reflect stage analytics
+  try {
+    const uploadId = Math.random().toString(36).slice(2) + Date.now().toString(36)
+    const now = Math.floor(Date.now() / 1000)
+    execute(
+      "INSERT INTO video_uploads (id, video_id, type, title, date, group_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [uploadId, videoId, "shorts", shortsScript.title, ctx.date, ctx.groupId || null, now],
+    )
+    saveDatabase()
+  } catch (err) {
+    console.info("[shorts] Failed to record upload (non-fatal):", err)
+  }
+
   return { url, title: shortsScript.title }
 }
 
