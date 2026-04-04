@@ -207,6 +207,20 @@ export function renderVideo(
  * Render a Shorts vertical video using Remotion CLI.
  * Spawns `npx remotion render` with the ShortsVideo composition at 1080x1920.
  */
+/**
+ * Copy a background music file to the Remotion public/ directory
+ * so it can be used via staticFile() in the ShortsVideo composition.
+ * Returns the relative path for staticFile(), or undefined if no BGM configured.
+ */
+export function copyShortsBgm(bgmSourcePath: string): string {
+  const publicDir = path.resolve(getVideoProjectDir(), "public")
+  fs.mkdirSync(publicDir, { recursive: true })
+  const dest = path.resolve(publicDir, "shorts-bgm.mp3")
+  fs.copyFileSync(bgmSourcePath, dest)
+  console.info("[video-render] Copied Shorts BGM to", dest)
+  return "shorts-bgm.mp3"
+}
+
 export function renderShorts(
   scenesJsonPath: string,
   audioPath: string,

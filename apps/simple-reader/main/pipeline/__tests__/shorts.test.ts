@@ -80,8 +80,8 @@ describe("shorts stage in isolation", () => {
     })
 
     expect(result.shortsUrl).toBe("https://www.youtube.com/shorts/mock-video-id")
-    expect(statuses).toContain("Generating Shorts script...")
-    expect(statuses).toContain("Generating Shorts audio...")
+    expect(statuses).toContain("[1] Generating Shorts script...")
+    expect(statuses).toContain("[1] Generating Shorts audio...")
   })
 
   it("shouldRun returns true when video + youtube + shorts all enabled", () => {

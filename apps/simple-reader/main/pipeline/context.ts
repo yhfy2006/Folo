@@ -46,6 +46,10 @@ export interface PipelineContext {
 
   // Stage 8: shorts
   shortsUrl?: string
+  shortsUrls?: string[]
+
+  // Options
+  skipUpload?: boolean
 }
 
 export function createContext(overrides?: Partial<PipelineContext>): PipelineContext {

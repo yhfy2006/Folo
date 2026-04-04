@@ -1349,6 +1349,33 @@ function PreferencesDialog({ onClose }: { onClose: () => void }) {
           </p>
         </div>
 
+        {/* Shorts Count */}
+        {prefs.youtubeEnabled && (
+          <div className="mb-4">
+            <label className="mb-1 block text-xs text-[hsl(var(--muted-foreground))]">
+              Shorts per run
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={1}
+                max={10}
+                value={prefs.youtubeShortsCount || 1}
+                onChange={(e) =>
+                  setPrefs({
+                    ...prefs,
+                    youtubeShortsCount: Math.max(1, Math.min(10, Number(e.target.value) || 1)),
+                  })
+                }
+                className="w-16 rounded border border-[hsl(var(--border))] bg-transparent px-2 py-1 text-xs"
+              />
+              <span className="text-[10px] text-[hsl(var(--muted-foreground))]">
+                Each picks a different news story (1-10)
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Actions */}
         <div className="flex justify-end gap-2">
           <button

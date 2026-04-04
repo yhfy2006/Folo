@@ -1044,26 +1044,45 @@ export function parseShortsScriptResult(result: string): ShortsScript {
 export async function generateShortsScript(
   reportContent: string,
   onStatus: (status: string) => void,
+  excludeTopics?: string[],
 ): Promise<ShortsScript> {
   onStatus("Generating Shorts script...")
 
-  const prompt = `You are a viral short-video scriptwriter for "YOMOO 每日AI快送", a Chinese AI news channel.
+  const exclusionClause =
+    excludeTopics && excludeTopics.length > 0
+      ? `\n\nIMPORTANT: Do NOT select any of these topics (already used):\n${excludeTopics.map((t) => `- ${t}`).join("\n")}\nPick a DIFFERENT news item.\n`
+      : ""
 
-From the following daily report, select the ONE news item that is most personally relevant to average people (not niche/specialist topics). News about AI directly affecting daily life gets the most views.
+  const prompt = `You are an elite viral short-video scriptwriter for "YOMOO 每日AI快送", a Chinese AI/tech news channel on YouTube Shorts.
 
-Write a 30-60 second spoken script in Chinese that:
-- Starts with the most shocking or surprising fact (hook in 1 second, NO greeting, NO "大家好")
-- Is punchy, direct, and conversational
-- Ends with: "关注看更多每日AI快送"
+From the following daily report, select the ONE news item that will get the most views. Prioritize: AI tools that non-technical users will encounter soon, major company announcements, surprising statistics, or controversial changes.
+${exclusionClause}
+SCRIPT RULES (40-50 seconds when read aloud at normal pace):
+
+1. HOOK (first sentence, under 2 seconds): Use ONE of these patterns:
+   - Urgency: "[公司]刚刚宣布了一个重磅消息"
+   - Contrast: "AI在做X，但实际上Y"
+   - Disbelief: "你可能不信，[surprising fact]"
+   - Number: "[数字]% 的人不知道这件事"
+   NO greeting. NO "大家好". NO "你知道吗". Jump straight to the shocking fact.
+
+2. BODY (3-4 punchy sentences): Direct, conversational Chinese. Each sentence delivers one new fact.
+   - Insert a PATTERN BREAK at ~15 seconds: a surprising stat, a rhetorical question, or "但关键是..."
+   - Keep sentences short (under 25 chars each). This helps TTS pacing.
+
+3. ENDING: Rotate between these CTA styles (pick one):
+   - "你觉得呢？评论区告诉我，关注YOMOO看更多AI快送"
+   - "保存这条，以后会用到。关注YOMOO不错过每日AI快送"
+   - "点个关注，明天还有更劲爆的。YOMOO每日AI快送"
 
 Output strict JSON only, no markdown fencing:
 {
-  "title": "YouTube title, max 60 chars, provocative (e.g. 'AI接管你的电脑了！')",
-  "headline": "Bold on-screen headline, max 15 Chinese chars (e.g. 'AI接管电脑')",
-  "script": "The spoken script text, 30-60 seconds when read aloud",
+  "title": "YouTube title, max 35 Chinese chars, use number or superlative (e.g. '3个你必须知道的AI更新', 'AI刚刚学会了最可怕的技能')",
+  "headline": "Bold on-screen headline, max 12 Chinese chars, punchy (e.g. 'AI接管电脑', 'Copilot大升级')",
+  "script": "The spoken script text, 40-50 seconds when read aloud",
   "newsUrl": "URL of the source article from the report",
   "ogImageUrl": "OG image URL if mentioned in the report, or null",
-  "keyPoints": ["3-5 short key facts/stats that appear on screen, max 10 chars each, e.g. '性能提升5x', '价格-50%', '用户破亿'"]
+  "keyPoints": ["3-4 short key facts/stats shown on screen, max 8 chars each, e.g. '速度快5倍', '免费使用', '用户破亿'"]
 }
 
 Daily report:
