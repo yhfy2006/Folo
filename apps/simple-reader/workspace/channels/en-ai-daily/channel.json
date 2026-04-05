@@ -1,0 +1,36 @@
+{
+  "name": "AI Daily Digest (EN)",
+  "language": "en",
+  "groupId": "",
+  "tts": {
+    "provider": "minimax",
+    "voiceId": "English_Graceful_Lady",
+    "model": "speech-02-hd",
+    "speed": 1.0
+  },
+  "youtube": {
+    "tags": ["AI", "Daily Digest", "Tech News", "Artificial Intelligence"],
+    "titleTemplate": "AI Daily Digest — {{date}}",
+    "descriptionTemplate": "🤖 AI Daily Digest — {{date}}\n\n{{summary}}\n\n🎧 Podcast: {{audioUrl}}\n\n#AI #DailyDigest #TechNews"
+  },
+  "web": {
+    "htmlLang": "en",
+    "brandName": "AI Daily Digest",
+    "ogTitle": "AI Daily Digest",
+    "footerCta": "Subscribe to our newsletter for daily AI news delivered to your inbox"
+  },
+  "stages": [
+    "verify",
+    "reflect",
+    "report",
+    "podcast",
+    "audio",
+    "upload",
+    "publish",
+    "video",
+    "youtube",
+    "shorts"
+  ],
+  "promptDir": "prompts",
+  "skillsDir": "skills"
+}
