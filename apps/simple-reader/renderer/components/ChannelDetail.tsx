@@ -5,6 +5,7 @@ import { FeedsTab } from "./tabs/FeedsTab"
 import { OverviewTab } from "./tabs/OverviewTab"
 import { PipelineTab } from "./tabs/PipelineTab"
 import { ReportsTab } from "./tabs/ReportsTab"
+import { SettingsTab } from "./tabs/SettingsTab"
 
 const TABS = [
   { id: "overview", label: "Overview" },
@@ -86,9 +87,7 @@ export function ChannelDetail() {
         {activeTab === "feeds" && <FeedsTab channel={channel} />}
         {activeTab === "pipeline" && <PipelineTab channel={channel} />}
         {activeTab === "reports" && <ReportsTab channel={channel} />}
-        {activeTab === "settings" && (
-          <div className="text-sm text-[var(--fg-muted)]">Settings view — coming soon</div>
-        )}
+        {activeTab === "settings" && <SettingsTab channel={channel} />}
       </div>
     </div>
   )
