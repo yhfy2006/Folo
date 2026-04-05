@@ -320,9 +320,9 @@ export async function updateRootIndex(
   }
 }
 
-function generateRootIndexHtml(firstEpisodeLink: string): string {
+function generateRootIndexHtml(firstEpisodeLink: string, htmlLang?: string): string {
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${htmlLang ?? "zh-CN"}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -738,7 +738,7 @@ export async function deploySubscribePage(
   console.info("[github] Subscribe page deployed")
 }
 
-function generateSubscribePageHtml(workerUrl: string): string {
+function generateSubscribePageHtml(workerUrl: string, htmlLang?: string): string {
   // Escape the worker URL for safe embedding in JS string
   const _safeWorkerUrl = workerUrl
     .replaceAll("\\", "\\\\")
@@ -746,7 +746,7 @@ function generateSubscribePageHtml(workerUrl: string): string {
     .replace(/\/$/, "")
 
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${htmlLang ?? "zh-CN"}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">

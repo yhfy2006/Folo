@@ -1,6 +1,10 @@
 import * as React from "react"
 
 import { useChannelStore } from "../stores/channel-store"
+import { FeedsTab } from "./tabs/FeedsTab"
+import { OverviewTab } from "./tabs/OverviewTab"
+import { PipelineTab } from "./tabs/PipelineTab"
+import { ReportsTab } from "./tabs/ReportsTab"
 
 const TABS = [
   { id: "overview", label: "Overview" },
@@ -78,20 +82,10 @@ export function ChannelDetail() {
 
       {/* Content area — placeholder for each tab */}
       <div className="flex-1 overflow-y-auto p-8">
-        {activeTab === "overview" && (
-          <div className="text-sm text-[var(--fg-muted)]">
-            Overview for {channel.name} — coming soon
-          </div>
-        )}
-        {activeTab === "feeds" && (
-          <div className="text-sm text-[var(--fg-muted)]">Feeds configuration — coming soon</div>
-        )}
-        {activeTab === "pipeline" && (
-          <div className="text-sm text-[var(--fg-muted)]">Pipeline view — coming soon</div>
-        )}
-        {activeTab === "reports" && (
-          <div className="text-sm text-[var(--fg-muted)]">Reports view — coming soon</div>
-        )}
+        {activeTab === "overview" && <OverviewTab channel={channel} />}
+        {activeTab === "feeds" && <FeedsTab channel={channel} />}
+        {activeTab === "pipeline" && <PipelineTab channel={channel} />}
+        {activeTab === "reports" && <ReportsTab channel={channel} />}
         {activeTab === "settings" && (
           <div className="text-sm text-[var(--fg-muted)]">Settings view — coming soon</div>
         )}

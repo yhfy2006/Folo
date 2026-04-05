@@ -41,6 +41,7 @@ export async function generateReport(
   groupId?: string,
   youtubeInsights?: string,
   dryRun?: boolean,
+  promptOverrides?: { screeningPrompt?: string; reportPrompt?: string },
 ): Promise<void> {
   const prefs = loadPreferences()
   console.info("[ai-report] Preferences:", JSON.stringify(prefs))
@@ -110,8 +111,10 @@ export async function generateReport(
     `Screening ${entriesToScreen.length} entries from the last ${effectivePrefs.timeRange}h...`,
   )
 
-  // Stage 1: Screening - use the "screening" skill
-  const screeningPrompt = buildScreeningPrompt(entriesToScreen, effectivePrefs, youtubeInsights)
+  // Stage 1: Screening - use channel prompt override or built-in prompt
+  const screeningPrompt =
+    promptOverrides?.screeningPrompt ||
+    buildScreeningPrompt(entriesToScreen, effectivePrefs, youtubeInsights)
   console.info("[ai-report] Screening prompt length:", screeningPrompt.length, "chars")
   let screeningResult: string
 
@@ -165,14 +168,11 @@ export async function generateReport(
     )
   }
 
-  // Stage 3: Generate final report with streaming
+  // Stage 3: Generate final report with streaming (use channel override when available)
   onStatus(`Generating report from ${enrichedEntries.length} articles...`)
-  const reportPrompt = buildReportPrompt(
-    enrichedEntries,
-    effectivePrefs,
-    historicalTopics,
-    deepDiveContext,
-  )
+  const reportPrompt =
+    promptOverrides?.reportPrompt ||
+    buildReportPrompt(enrichedEntries, effectivePrefs, historicalTopics, deepDiveContext)
   console.info("[ai-report] Report prompt length:", reportPrompt.length, "chars")
 
   let fullContent = ""
@@ -821,6 +821,7 @@ export async function generatePodcastScript(
   onStatus: (status: string) => void,
   onDone: () => void,
   onError: (error: string) => void,
+  promptOverride?: string,
 ): Promise<void> {
   const prefs = loadPreferences()
   onStatus("Converting report to podcast script...")
@@ -845,7 +846,10 @@ export async function generatePodcastScript(
   const now = new Date()
   const spokenDate = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`
 
-  const prompt = `${skillsSection}
+  // Use channel-provided prompt when available, otherwise use built-in prompt
+  const prompt =
+    promptOverride ||
+    `${skillsSection}
 
 Your task: Convert the following daily briefing report into a podcast broadcast script (口播文案).
 
@@ -913,6 +917,7 @@ export async function generateReportToString(
   groupId?: string,
   youtubeInsights?: string,
   dryRun?: boolean,
+  promptOverrides?: { screeningPrompt?: string; reportPrompt?: string },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let fullContent = ""
@@ -926,6 +931,7 @@ export async function generateReportToString(
       groupId,
       youtubeInsights,
       dryRun,
+      promptOverrides,
     ).catch(reject)
   })
 }
@@ -936,6 +942,7 @@ export async function generateReportToString(
 export async function generatePodcastScriptToString(
   reportContent: string,
   onStatus: (status: string) => void,
+  promptOverride?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let fullContent = ""
@@ -947,6 +954,7 @@ export async function generatePodcastScriptToString(
       onStatus,
       () => resolve(fullContent),
       (error) => reject(new Error(error)),
+      promptOverride,
     ).catch(reject)
   })
 }
@@ -1072,6 +1080,7 @@ export async function generateShortsScripts(
   count: number,
   onStatus: (status: string) => void,
   excludeTopics?: string[],
+  promptOverride?: string,
 ): Promise<ShortsScript[]> {
   onStatus(`Generating ${count} Shorts script${count > 1 ? "s" : ""}...`)
 
@@ -1092,7 +1101,10 @@ export async function generateShortsScripts(
 
   const skillsSection = formatSkillsPrompt(loadAllSkills())
 
-  const prompt = `${skillsSection}
+  // Use channel-provided prompt when available, otherwise use built-in prompt
+  const prompt =
+    promptOverride ||
+    `${skillsSection}
 
 You are an elite viral short-video scriptwriter for "YOMOO 每日AI快送", a Chinese AI/tech news channel on YouTube Shorts.
 
