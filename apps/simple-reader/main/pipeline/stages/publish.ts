@@ -16,6 +16,11 @@ export const publishStage: StageDefinition = {
   run: async (ctx: PipelineContext, callbacks: StageCallbacks): Promise<PipelineContext> => {
     callbacks.onStatus("Publishing branded page...")
 
+    if (ctx.dryRun) {
+      callbacks.onStatus("Dry run: skipping publish")
+      return { ...ctx, pageUrl: "dry-run://page" }
+    }
+
     const {
       prefs,
       owner,

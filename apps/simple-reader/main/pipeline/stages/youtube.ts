@@ -17,6 +17,11 @@ export const youtubeStage: StageDefinition = {
 
     callbacks.onStatus("Uploading to YouTube...")
 
+    if (ctx.dryRun) {
+      callbacks.onStatus("Dry run: skipping YouTube upload")
+      return { ...ctx, youtubeUrl: "dry-run://youtube" }
+    }
+
     const { prefs, date, videoPath, thumbnailPath, scenesJsonPath, pageUrl, audioUrl } = ctx
 
     // Refresh access token

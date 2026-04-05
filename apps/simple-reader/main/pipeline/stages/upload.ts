@@ -11,6 +11,11 @@ export const uploadStage: StageDefinition = {
   run: async (ctx: PipelineContext, callbacks: StageCallbacks): Promise<PipelineContext> => {
     callbacks.onStatus("Uploading audio to GitHub...")
 
+    if (ctx.dryRun) {
+      callbacks.onStatus("Dry run: skipping audio upload")
+      return { ...ctx, audioUrl: "dry-run://audio" }
+    }
+
     let audioUrl: string
     try {
       const audioBuffer = fs.readFileSync(ctx.audioFilePath!)

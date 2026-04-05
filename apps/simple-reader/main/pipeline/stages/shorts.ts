@@ -174,6 +174,11 @@ export const shortsStage: StageDefinition = {
   shouldRun: (ctx: PipelineContext) =>
     ctx.prefs.youtubeEnabled && !!ctx.prefs.youtubeRefreshToken && ctx.prefs.youtubeShortsEnabled,
   run: async (ctx: PipelineContext, callbacks: StageCallbacks): Promise<PipelineContext> => {
+    if (ctx.dryRun) {
+      callbacks.onStatus("Dry run: Shorts will render but skip upload")
+      ctx = { ...ctx, skipUpload: true }
+    }
+
     const count = Math.max(1, ctx.prefs.youtubeShortsCount || 1)
     const shortsUrls: string[] = []
 
