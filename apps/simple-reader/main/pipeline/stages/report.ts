@@ -17,6 +17,7 @@ export const reportStage: StageDefinition = {
         },
         ctx.groupId,
         ctx.youtubeInsights,
+        ctx.dryRun,
       )
     } catch (err) {
       throw new Error(`Report generation failed: ${err}`)

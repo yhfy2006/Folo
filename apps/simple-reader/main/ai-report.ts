@@ -40,6 +40,7 @@ export async function generateReport(
   onError: (error: string) => void,
   groupId?: string,
   youtubeInsights?: string,
+  dryRun?: boolean,
 ): Promise<void> {
   const prefs = loadPreferences()
   console.info("[ai-report] Preferences:", JSON.stringify(prefs))
@@ -181,46 +182,50 @@ export async function generateReport(
       onChunk(chunk)
     })
 
-    // Save report to database
-    const reportId = Math.random().toString(36).slice(2) + Date.now().toString(36)
-    const now = Math.floor(Date.now() / 1000)
-    const title = generateReportTitle(effectivePrefs, groupName)
-    execute(
-      "INSERT INTO reports (id, title, content, language, time_range, entry_count, type, group_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      [
+    if (!dryRun) {
+      // Save report to database
+      const reportId = Math.random().toString(36).slice(2) + Date.now().toString(36)
+      const now = Math.floor(Date.now() / 1000)
+      const title = generateReportTitle(effectivePrefs, groupName)
+      execute(
+        "INSERT INTO reports (id, title, content, language, time_range, entry_count, type, group_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [
+          reportId,
+          title,
+          fullContent,
+          effectivePrefs.language,
+          effectivePrefs.timeRange,
+          enrichedEntries.length,
+          "report",
+          groupId || null,
+          now,
+        ],
+      )
+
+      // Record which entries were used so they won't be selected again
+      for (const entry of enrichedEntries) {
+        execute("INSERT OR IGNORE INTO report_entries (report_id, entry_id) VALUES (?, ?)", [
+          reportId,
+          entry.id,
+        ])
+      }
+      saveDatabase()
+      console.info(
+        "[ai-report] Report saved:",
         reportId,
-        title,
-        fullContent,
-        effectivePrefs.language,
-        effectivePrefs.timeRange,
+        "with",
         enrichedEntries.length,
-        "report",
-        groupId || null,
-        now,
-      ],
-    )
+        "entries recorded",
+      )
 
-    // Record which entries were used so they won't be selected again
-    for (const entry of enrichedEntries) {
-      execute("INSERT OR IGNORE INTO report_entries (report_id, entry_id) VALUES (?, ?)", [
-        reportId,
-        entry.id,
-      ])
+      // Stage 3.5: Extract topics (errors are non-blocking)
+      onStatus("Extracting topic digest...")
+      await extractAndSaveTopics(fullContent, reportId, groupId).catch((err) => {
+        console.warn("[ai-report] Topic extraction failed:", err)
+      })
+    } else {
+      console.info("[ai-report] Dry run: skipping DB writes")
     }
-    saveDatabase()
-    console.info(
-      "[ai-report] Report saved:",
-      reportId,
-      "with",
-      enrichedEntries.length,
-      "entries recorded",
-    )
-
-    // Stage 3.5: Extract topics (errors are non-blocking)
-    onStatus("Extracting topic digest...")
-    await extractAndSaveTopics(fullContent, reportId, groupId).catch((err) => {
-      console.warn("[ai-report] Topic extraction failed:", err)
-    })
 
     onDone()
   } catch (err) {
@@ -907,6 +912,7 @@ export async function generateReportToString(
   onStatus: (status: string) => void,
   groupId?: string,
   youtubeInsights?: string,
+  dryRun?: boolean,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let fullContent = ""
@@ -919,6 +925,7 @@ export async function generateReportToString(
       (error) => reject(new Error(error)),
       groupId,
       youtubeInsights,
+      dryRun,
     ).catch(reject)
   })
 }
