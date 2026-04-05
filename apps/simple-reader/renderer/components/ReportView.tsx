@@ -359,6 +359,7 @@ export function ReportView() {
             <ReportHistory
               onGenerate={() => startReport(selectedGroupId || undefined)}
               onStartPipeline={() => startPipeline(selectedGroupId || undefined)}
+              onStartPipelineDryRun={() => startPipeline(selectedGroupId || undefined, true)}
               onStartVideoOnly={useReportStore.getState().startVideoOnly}
               groupId={selectedGroupId}
             />
@@ -406,14 +407,67 @@ interface SavedReport {
   created_at: number
 }
 
+function PipelineDropdownButton({
+  onStartPipeline,
+  onStartPipelineDryRun,
+}: {
+  onStartPipeline: () => void
+  onStartPipelineDryRun: () => void
+}) {
+  const [open, setOpen] = React.useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [])
+
+  return (
+    <div ref={ref} className="relative inline-flex">
+      <button
+        onClick={onStartPipeline}
+        className="rounded-l px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
+        style={{ background: "linear-gradient(135deg, #FF6B35, #ff8f5e)" }}
+      >
+        YOMOO Pipeline
+      </button>
+      <button
+        onClick={() => setOpen(!open)}
+        className="rounded-r border-l border-white/30 p-2 text-sm text-white hover:opacity-90"
+        style={{ background: "linear-gradient(135deg, #FF6B35, #ff8f5e)" }}
+      >
+        ▾
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-10 mt-1 w-40 rounded border border-[hsl(var(--border))] bg-[hsl(var(--popover))] py-1 shadow-lg">
+          <button
+            onClick={() => {
+              setOpen(false)
+              onStartPipelineDryRun()
+            }}
+            className="w-full px-3 py-1.5 text-left text-sm text-[hsl(var(--popover-foreground))] hover:bg-[hsl(var(--accent))]"
+          >
+            Dry Run
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ReportHistory({
   onGenerate,
   onStartPipeline,
+  onStartPipelineDryRun,
   onStartVideoOnly,
   groupId,
 }: {
   onGenerate: () => void
   onStartPipeline: () => void
+  onStartPipelineDryRun: () => void
   onStartVideoOnly: () => void
   groupId?: string | null
 }) {
@@ -478,13 +532,10 @@ function ReportHistory({
           >
             Generate New Report
           </button>
-          <button
-            onClick={onStartPipeline}
-            className="rounded px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
-            style={{ background: "linear-gradient(135deg, #FF6B35, #ff8f5e)" }}
-          >
-            YOMOO Pipeline
-          </button>
+          <PipelineDropdownButton
+            onStartPipeline={onStartPipeline}
+            onStartPipelineDryRun={onStartPipelineDryRun}
+          />
           <button
             onClick={onStartVideoOnly}
             className="rounded px-4 py-2 text-sm font-semibold text-white hover:opacity-90"

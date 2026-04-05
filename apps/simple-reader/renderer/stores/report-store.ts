@@ -52,7 +52,7 @@ interface ReportState {
   startAudioGeneration: (text: string) => Promise<void>
   resetAudio: () => void
 
-  startPipeline: (groupId?: string) => Promise<void>
+  startPipeline: (groupId?: string, dryRun?: boolean) => Promise<void>
   resetPipeline: () => void
 }
 
@@ -212,12 +212,13 @@ export const useReportStore = create<ReportState>((set, get) => ({
       pipelineResult: null,
     }),
 
-  startPipeline: async (groupId?: string) => {
+  startPipeline: async (groupId?: string, dryRun?: boolean) => {
+    const modeLabel = dryRun ? "YOMOO Pipeline (Dry Run)" : "YOMOO Pipeline"
     set({
       pipelineRunning: true,
       pipelineStage: "",
-      pipelineStatus: "Starting YOMOO Pipeline...",
-      pipelineLogs: [`${formatLogTime()} Starting YOMOO Pipeline...`],
+      pipelineStatus: `Starting ${modeLabel}...`,
+      pipelineLogs: [`${formatLogTime()} Starting ${modeLabel}...`],
       pipelineStep: 0,
       pipelineError: null,
       pipelineErrorStage: null,
@@ -260,7 +261,7 @@ export const useReportStore = create<ReportState>((set, get) => ({
     })
 
     try {
-      const result = await window.api.runYomooPipeline(groupId)
+      const result = await window.api.runYomooPipeline(groupId, dryRun)
       if (!result.success) {
         const errorMsg = result.error || "Unknown error"
         set((state) => ({
