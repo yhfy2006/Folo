@@ -113,7 +113,8 @@ const api = {
   removeSubscriber: (email: string) => ipcRenderer.invoke("remove-subscriber", email),
 
   // YOMOO Pipeline
-  runYomooPipeline: (groupId?: string) => ipcRenderer.invoke("run-yomoo-pipeline", groupId),
+  runYomooPipeline: (groupId?: string, dryRun?: boolean) =>
+    ipcRenderer.invoke("run-yomoo-pipeline", groupId, dryRun),
   runVideoOnly: () => ipcRenderer.invoke("run-yomoo-video-only"),
   onPipelineStage: (callback: (stage: string) => void) => {
     const handler = (_event: any, stage: string) => callback(stage)

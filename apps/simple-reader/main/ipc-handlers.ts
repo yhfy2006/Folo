@@ -323,8 +323,8 @@ export function registerIpcHandlers() {
   })
 
   // --- YOMOO Pipeline ---
-  ipcMain.handle("run-yomoo-pipeline", async (event, groupId?: string) => {
-    console.info("[ipc] run-yomoo-pipeline called, groupId:", groupId)
+  ipcMain.handle("run-yomoo-pipeline", async (event, groupId?: string, dryRun?: boolean) => {
+    console.info("[ipc] run-yomoo-pipeline called, groupId:", groupId, "dryRun:", dryRun)
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) return { success: false, error: "No window found" }
 
@@ -357,6 +357,7 @@ export function registerIpcHandlers() {
           },
         },
         groupId,
+        dryRun ? { dryRun: true } : undefined,
       )
       return { success: true }
     } catch (err) {
