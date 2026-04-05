@@ -67,4 +67,5 @@ export interface ShortsData {
   subtitles?: SubtitleLine[]
   keyPoints?: ShortsKeyPoint[]
   youtubeTitle: string
+  bgmPath?: string
 }

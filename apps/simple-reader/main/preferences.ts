@@ -22,6 +22,8 @@ export interface UserPreferences {
   youtubeRefreshToken: string
   youtubeEnabled: boolean
   youtubeShortsEnabled: boolean
+  youtubeShortsCount: number // how many Shorts to generate per run (default 1)
+  shortsBgmPath: string // path to background music file for Shorts (empty = no BGM)
 }
 
 const DEFAULT_PREFERENCES: UserPreferences = {
@@ -43,6 +45,8 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   youtubeRefreshToken: "",
   youtubeEnabled: false,
   youtubeShortsEnabled: true,
+  youtubeShortsCount: 1,
+  shortsBgmPath: "",
 }
 
 function getPreferencesPath(): string {
