@@ -50,6 +50,7 @@ export interface PipelineContext {
 
   // Options
   skipUpload?: boolean
+  dryRun?: boolean
 }
 
 export function createContext(overrides?: Partial<PipelineContext>): PipelineContext {

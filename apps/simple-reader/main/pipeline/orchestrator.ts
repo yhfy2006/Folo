@@ -56,8 +56,12 @@ export function resolveStartIndex(stages: StageDefinition[], startFrom?: StageNa
   return idx
 }
 
-export async function runPipeline(callbacks: PipelineCallbacks, groupId?: string): Promise<void> {
-  const ctx = createContext({ groupId })
+export async function runPipeline(
+  callbacks: PipelineCallbacks,
+  groupId?: string,
+  options?: { dryRun?: boolean },
+): Promise<void> {
+  const ctx = createContext({ groupId, dryRun: options?.dryRun })
   await executePipeline(ctx, ALL_STAGES, callbacks)
 }
 
