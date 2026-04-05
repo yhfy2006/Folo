@@ -38,7 +38,9 @@ export function App() {
         startPipeline(groupId)
       }
     })
-    return cleanup
+    return () => {
+      cleanup?.()
+    }
   }, [])
 
   return (
