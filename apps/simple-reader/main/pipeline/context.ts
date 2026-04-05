@@ -3,12 +3,14 @@ import fs from "node:fs"
 import type { UserPreferences } from "../preferences"
 import { loadPreferences } from "../preferences"
 import type { SubtitleSegment } from "../tts"
+import type { Channel } from "./channel-types"
 
 export interface PipelineContext {
   // Immutable config
   date: string
   groupId?: string
   groupName?: string
+  channel?: Channel
   prefs: UserPreferences
 
   // Stage 0: verify

@@ -3,6 +3,7 @@ import os from "node:os"
 
 import path from "pathe"
 
+import { loadChannelByGroupId } from "./channel-loader"
 import type { PipelineContext } from "./context"
 import { createContext, saveContext } from "./context"
 import { audioStage } from "./stages/audio"
@@ -62,6 +63,15 @@ export async function runPipeline(
   options?: { dryRun?: boolean },
 ): Promise<void> {
   const ctx = createContext({ groupId, dryRun: options?.dryRun })
+
+  // Resolve channel from groupId so stages can access channel config
+  if (groupId) {
+    const channel = loadChannelByGroupId(groupId)
+    if (channel) {
+      ctx.channel = channel
+    }
+  }
+
   await executePipeline(ctx, ALL_STAGES, callbacks)
 }
 
@@ -79,7 +89,13 @@ async function executePipeline(
   callbacks: PipelineCallbacks,
   startFrom?: StageName,
 ): Promise<void> {
-  const activeStages = buildStageList(allStages, initialCtx)
+  let activeStages = buildStageList(allStages, initialCtx)
+
+  // Filter to only channel-allowed stages when a channel is bound
+  if (initialCtx.channel) {
+    activeStages = activeStages.filter((s) => initialCtx.channel!.stages.includes(s.name))
+  }
+
   const startIdx = resolveStartIndex(activeStages, startFrom)
   const stagesToRun = activeStages.slice(startIdx)
   const total = stagesToRun.length
