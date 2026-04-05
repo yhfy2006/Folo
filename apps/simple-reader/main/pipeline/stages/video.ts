@@ -12,6 +12,7 @@ import {
 } from "../../scene-generator"
 import { downloadOGImages, renderThumbnail, renderVideo } from "../../video-render"
 import type { PipelineContext } from "../context"
+import { loadPrompt } from "../prompt-loader"
 import type { StageCallbacks, StageDefinition } from "../types"
 
 export const videoStage: StageDefinition = {
@@ -70,6 +71,20 @@ export const videoStage: StageDefinition = {
       )
     }
 
+    // Load channel prompt override for scene generation when available
+    let scenesPromptOverride: string | undefined
+    if (ctx.channel) {
+      try {
+        scenesPromptOverride = loadPrompt(ctx.channel, "scenes.md", {
+          date,
+          reportContent: reportContent!,
+        })
+        console.info("[video] Using channel scenes prompt override")
+      } catch (err) {
+        console.info("[video] Channel scenes prompt not found, using defaults:", err)
+      }
+    }
+
     // Generate scenes
     const scenes = await generateScenes(
       alignedSegments,
@@ -77,6 +92,7 @@ export const videoStage: StageDefinition = {
       audioDuration,
       (status) => callbacks.onStatus(status),
       deepgramWords,
+      scenesPromptOverride,
     )
 
     scenes.subtitles = subtitles

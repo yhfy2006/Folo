@@ -6,6 +6,7 @@ import {
   updateSitemap,
 } from "../../github"
 import { generateEmailHtml, generateHtmlPage } from "../../html-generator"
+import { substituteTemplate } from "../channel-types"
 import type { PipelineContext } from "../context"
 import type { StageCallbacks, StageDefinition } from "../types"
 
@@ -32,6 +33,10 @@ export const publishStage: StageDefinition = {
       seoDescription,
     } = ctx
 
+    // Use channel config when available
+    const brandName = ctx.channel?.web?.brandName ?? "YOMOO"
+    const htmlLang = ctx.channel?.web?.htmlLang ?? undefined
+
     try {
       const html = generateHtmlPage(
         reportContent!,
@@ -39,6 +44,7 @@ export const publishStage: StageDefinition = {
         date,
         podcastScript!,
         seoDescription!,
+        htmlLang,
       )
       const htmlBase64 = Buffer.from(html).toString("base64")
 
@@ -53,10 +59,13 @@ export const publishStage: StageDefinition = {
         `feat: add episode ${date}${groupName ? ` (${groupName})` : ""}`,
       )
 
-      // Update root index
-      const episodeTitle = groupName
-        ? `${groupName} - YOMOO 每日AI快送 - ${date}`
-        : `YOMOO 每日AI快送 - ${date}`
+      // Update root index — use channel YouTube titleTemplate for episode title when available
+      const defaultEpisodeTitle = groupName
+        ? `${groupName} - ${brandName} 每日AI快送 - ${date}`
+        : `${brandName} 每日AI快送 - ${date}`
+      const episodeTitle = ctx.channel?.youtube?.titleTemplate
+        ? substituteTemplate(ctx.channel.youtube.titleTemplate, ctx.channel, { date })
+        : defaultEpisodeTitle
       await updateRootIndex(prefs.githubToken, owner!, date, episodeTitle)
 
       // Commit email-safe HTML (triggers GitHub Action to send newsletter)

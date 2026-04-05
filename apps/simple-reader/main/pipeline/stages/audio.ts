@@ -13,12 +13,19 @@ export const audioStage: StageDefinition = {
       throw new Error("MiniMax API Key not configured. Please set it in Preferences.")
     }
 
+    // Use channel TTS config when available
+    const language = ctx.channel?.language ?? "zh-CN"
+
     let audioFilePath: string
     let ttsSubtitles: import("../../tts").SubtitleSegment[] | undefined
     try {
-      const ttsResult = await generateAudioToFile(ctx.podcastScript!, (status) => {
-        callbacks.onStatus(status)
-      })
+      const ttsResult = await generateAudioToFile(
+        ctx.podcastScript!,
+        (status) => {
+          callbacks.onStatus(status)
+        },
+        language,
+      )
       audioFilePath = ttsResult.filePath
       ttsSubtitles = ttsResult.subtitles
       if (ttsSubtitles) {

@@ -9,6 +9,7 @@ import { getWorkspacePath } from "../../workspace"
 import type { ChannelVideo } from "../../youtube"
 import { listChannelVideos, parseDuration } from "../../youtube"
 import type { PipelineContext } from "../context"
+import { readSkill, writeSkill } from "../prompt-loader"
 import type { StageCallbacks, StageDefinition } from "../types"
 
 interface ClassifiedVideo extends ChannelVideo {
@@ -148,16 +149,21 @@ export const reflectStage: StageDefinition = {
       topics: JSON.parse(r.topics_json) as TopicEntry[],
     }))
 
-    // 4. Read existing skill
-    const workspacePath = getWorkspacePath()
-    const skillPath = path.join(workspacePath, ".claude", "skills", "content-strategy.md")
+    // 4. Read existing skill — prefer channel skillsDir, fall back to workspace
     let currentSkill = ""
-    try {
-      if (fs.existsSync(skillPath)) {
-        currentSkill = fs.readFileSync(skillPath, "utf-8")
+    if (ctx.channel) {
+      currentSkill = readSkill(ctx.channel, "content-strategy.md")
+    }
+    if (!currentSkill) {
+      const workspacePath = getWorkspacePath()
+      const skillPath = path.join(workspacePath, ".claude", "skills", "content-strategy.md")
+      try {
+        if (fs.existsSync(skillPath)) {
+          currentSkill = fs.readFileSync(skillPath, "utf-8")
+        }
+      } catch {
+        // First run, no existing skill
       }
-    } catch {
-      // First run, no existing skill
     }
 
     // 5. Build prompt and run Claude
@@ -167,12 +173,18 @@ export const reflectStage: StageDefinition = {
     callbacks.onStatus("Generating updated content strategy...")
     const updatedSkill = await runClaude(prompt)
 
-    // 6. Write updated skill
-    const skillDir = path.join(workspacePath, ".claude", "skills")
-    fs.mkdirSync(skillDir, { recursive: true })
-    fs.writeFileSync(skillPath, `${updatedSkill.trim()}\n`, "utf-8")
-
-    console.info("[reflect] Content strategy updated:", skillPath)
+    // 6. Write updated skill — prefer channel skillsDir, fall back to workspace
+    if (ctx.channel) {
+      writeSkill(ctx.channel, "content-strategy.md", `${updatedSkill.trim()}\n`)
+      console.info("[reflect] Content strategy updated in channel skillsDir")
+    } else {
+      const workspacePath = getWorkspacePath()
+      const skillDir = path.join(workspacePath, ".claude", "skills")
+      fs.mkdirSync(skillDir, { recursive: true })
+      const skillPath = path.join(skillDir, "content-strategy.md")
+      fs.writeFileSync(skillPath, `${updatedSkill.trim()}\n`, "utf-8")
+      console.info("[reflect] Content strategy updated:", skillPath)
+    }
     callbacks.onStatus("Content strategy updated")
 
     return ctx

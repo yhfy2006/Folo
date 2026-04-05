@@ -9,7 +9,9 @@ import type { SubtitleSegment } from "../../tts"
 import { generateAudioToFile } from "../../tts"
 import { copyShortsBgm, downloadShortsOGImage, renderShorts } from "../../video-render"
 import { refreshAccessToken, uploadVideo } from "../../youtube"
+import { substituteTemplate } from "../channel-types"
 import type { PipelineContext } from "../context"
+import { loadPrompt } from "../prompt-loader"
 import type { StageCallbacks, StageDefinition } from "../types"
 
 /**
@@ -137,14 +139,37 @@ async function renderAndUploadOneShorts(
       prefs.youtubeClientSecret,
     ))
   callbacks.onStatus(`[${index + 1}] Uploading Shorts to YouTube...`)
+
+  // Use channel YouTube config for shorts description/tags when available
+  const { channel } = ctx
+  const defaultDescription = `${shortsScript.headline}\n\n完整版: ${pageUrl}\n\n#AI新闻 #人工智能 #科技 #每日AI快送 #YOMOO`
+  const shortsDescription = channel?.youtube?.shortsDescriptionTemplate
+    ? substituteTemplate(channel.youtube.shortsDescriptionTemplate, channel, {
+        date,
+        headline: shortsScript.headline,
+        pageUrl: pageUrl || "",
+      })
+    : defaultDescription
+
+  const shortsTags = channel?.youtube?.tags ?? [
+    "AI",
+    "人工智能",
+    "每日AI快送",
+    "YOMOO",
+    "科技新闻",
+    "AI新闻",
+  ]
+  const defaultLanguage = channel?.language ?? "zh-CN"
+
   const videoId = await uploadVideo({
     accessToken: token,
     videoPath: shortsOutputPath,
     title: shortsScript.title,
-    description: `${shortsScript.headline}\n\n完整版: ${pageUrl}\n\n#AI新闻 #人工智能 #科技 #每日AI快送 #YOMOO`,
-    tags: ["AI", "人工智能", "每日AI快送", "YOMOO", "科技新闻", "AI新闻"],
+    description: shortsDescription,
+    tags: shortsTags,
     categoryId: "28",
     privacyStatus: "public",
+    defaultLanguage,
     onProgress: (pct) => callbacks.onStatus(`[${index + 1}] Uploading Shorts: ${pct}%`),
   })
 
@@ -192,10 +217,28 @@ export const shortsStage: StageDefinition = {
       )
     }
 
+    // Load channel prompt override for shorts scripts when available
+    let shortsPromptOverride: string | undefined
+    if (ctx.channel) {
+      try {
+        shortsPromptOverride = loadPrompt(ctx.channel, "shorts.md", {
+          date: ctx.date,
+          reportContent: ctx.reportContent!,
+        })
+        console.info("[shorts] Using channel prompt override")
+      } catch (err) {
+        console.info("[shorts] Channel prompt not found, using defaults:", err)
+      }
+    }
+
     // Generate all scripts in a single Claude CLI call
     callbacks.onStatus(`Generating ${count} Shorts scripts...`)
-    const scripts = await generateShortsScripts(ctx.reportContent!, count, (s) =>
-      callbacks.onStatus(s),
+    const scripts = await generateShortsScripts(
+      ctx.reportContent!,
+      count,
+      (s) => callbacks.onStatus(s),
+      undefined,
+      shortsPromptOverride,
     )
     console.info(`[shorts] Generated ${scripts.length} scripts in one call`)
 
