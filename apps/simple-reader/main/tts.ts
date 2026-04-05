@@ -3,6 +3,7 @@ import fs from "node:fs"
 import { app } from "electron"
 import path from "pathe"
 
+import { splitSubtitlesForLanguage } from "./pipeline/tts-splitter"
 import { loadPreferences } from "./preferences"
 
 const API_BASE = "https://api.minimax.io/v1"
@@ -109,7 +110,11 @@ interface TtsCallbacks {
  * Convert text to audio using MiniMax TTS API.
  * Automatically uses sync API for short text, async API for long text.
  */
-export async function generateAudio(text: string, callbacks: TtsCallbacks): Promise<void> {
+export async function generateAudio(
+  text: string,
+  callbacks: TtsCallbacks,
+  language?: string,
+): Promise<void> {
   const prefs = loadPreferences()
 
   if (!prefs.minimaxApiKey) {
@@ -148,6 +153,7 @@ export async function generateAudio(text: string, callbacks: TtsCallbacks): Prom
       audioSetting,
       headers,
       callbacks,
+      language,
     )
   } else {
     await generateAsync(
@@ -168,6 +174,7 @@ async function generateSync(
   audioSetting: object,
   headers: Record<string, string>,
   callbacks: TtsCallbacks,
+  language?: string,
 ): Promise<void> {
   callbacks.onStatus("Generating audio (sync)...")
 
@@ -218,7 +225,7 @@ async function generateSync(
       const subtitleUrl = data.data?.subtitle_file
       if (subtitleUrl && typeof subtitleUrl === "string") {
         const rawSubtitles = await fetchAndParseSubtitles(subtitleUrl, headers)
-        subtitles = splitLongSubtitles(rawSubtitles)
+        subtitles = splitSubtitlesForLanguage(rawSubtitles, language ?? "zh-CN")
         console.info(
           "[tts] Subtitles fetched:",
           rawSubtitles.length,
@@ -406,7 +413,7 @@ const MAX_SUBTITLE_CHARS = 20
  * Splits at Chinese punctuation first, then at natural word boundaries.
  * Timestamps are proportionally distributed based on character count.
  */
-function splitLongSubtitles(segments: SubtitleSegment[]): SubtitleSegment[] {
+function _splitLongSubtitles(segments: SubtitleSegment[]): SubtitleSegment[] {
   const result: SubtitleSegment[] = []
 
   for (const seg of segments) {
@@ -477,13 +484,18 @@ function formatSrtTime(seconds: number): string {
 export async function generateAudioToFile(
   text: string,
   onStatus: (status: string) => void,
+  language?: string,
 ): Promise<TtsResult> {
   return new Promise((resolve, reject) => {
-    generateAudio(text, {
-      onStatus,
-      onDone: (filePath, subtitles) => resolve({ filePath, subtitles }),
-      onError: (error) => reject(new Error(error)),
-    }).catch(reject)
+    generateAudio(
+      text,
+      {
+        onStatus,
+        onDone: (filePath, subtitles) => resolve({ filePath, subtitles }),
+        onError: (error) => reject(new Error(error)),
+      },
+      language,
+    ).catch(reject)
   })
 }
 
