@@ -1,18 +1,13 @@
 import * as React from "react"
 import { useEffect } from "react"
 
-import { ArticleView } from "./components/ArticleView"
-import { EntryList } from "./components/EntryList"
-import { FeedSidebar } from "./components/FeedSidebar"
-import { ReportView } from "./components/ReportView"
-import { useEntryStore } from "./stores/entry-store"
-import { useFeedStore } from "./stores/feed-store"
+import { ChannelDetail } from "./components/ChannelDetail"
+import { Dashboard } from "./components/Dashboard"
+import { useChannelStore } from "./stores/channel-store"
 import { useReportStore } from "./stores/report-store"
 
 export function App() {
-  const { loadFeeds, loadUnreadCounts } = useFeedStore()
-  const { loadEntries } = useEntryStore()
-  const { showReport } = useReportStore()
+  const { view, loadChannels } = useChannelStore()
 
   useEffect(() => {
     if (!window.api) {
@@ -20,33 +15,26 @@ export function App() {
       return
     }
 
-    // Initial load
-    loadFeeds()
-    loadUnreadCounts()
-    loadEntries()
-
-    // Listen for feed updates from main process
-    const cleanup = window.api.onFeedsUpdated(() => {
-      loadFeeds()
-      loadUnreadCounts()
-      loadEntries()
-    })
-
-    return cleanup
-  }, [loadFeeds, loadUnreadCounts, loadEntries])
+    loadChannels()
+  }, [loadChannels])
 
   // Listen for scheduled pipeline auto-trigger from main process.
-  // This must be in App (always mounted), not ReportView (conditionally mounted).
+  // This must be in App (always mounted), not inside a tab component.
   useEffect(() => {
     if (!window.api) return
 
     const cleanup = window.api.onPipelineAutoTrigger((groupId?: string) => {
+      if (!groupId) return
+      const { channels, selectChannel, setActiveTab } = useChannelStore.getState()
+      const channel = channels.find((c) => c.groupId === groupId)
+      if (channel) {
+        selectChannel(channel.id)
+        setActiveTab("pipeline")
+      }
+      // Start pipeline via report store
       const { pipelineRunning, startPipeline } = useReportStore.getState()
       if (!pipelineRunning) {
-        console.info(
-          "[auto-trigger] Scheduled pipeline triggered",
-          groupId ? `for group ${groupId}` : "",
-        )
+        console.info("[auto-trigger] Scheduled pipeline triggered for group", groupId)
         startPipeline(groupId)
       }
     })
@@ -54,21 +42,14 @@ export function App() {
   }, [])
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[hsl(var(--background))]">
-      {/* Draggable title bar region - pointer-events-none so buttons underneath remain clickable */}
-      <div
-        className="pointer-events-none fixed inset-x-0 top-0 z-50 h-10"
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-      />
-      <FeedSidebar />
-      {showReport ? (
-        <ReportView />
-      ) : (
-        <>
-          <EntryList />
-          <ArticleView />
-        </>
-      )}
+    <div
+      className="flex h-screen w-screen flex-col overflow-hidden"
+      style={{ background: "var(--surface-primary)", color: "var(--fg-primary)" }}
+      data-theme="dark"
+    >
+      {/* Draggable title bar region */}
+      <div className="h-10 shrink-0" style={{ WebkitAppRegion: "drag" } as React.CSSProperties} />
+      {view === "dashboard" ? <Dashboard /> : <ChannelDetail />}
     </div>
   )
 }
