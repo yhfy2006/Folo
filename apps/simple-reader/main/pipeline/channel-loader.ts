@@ -66,6 +66,8 @@ function readChannelFromDir(channelDir: string): Channel | null {
 
   try {
     const raw = JSON.parse(fs.readFileSync(configPath, "utf-8"))
+    // Inject id from directory name (not stored in channel.json)
+    raw.id = path.basename(channelDir)
     return resolveChannel(raw, channelDir)
   } catch {
     console.warn(`[channel-loader] Failed to parse ${configPath}`)
