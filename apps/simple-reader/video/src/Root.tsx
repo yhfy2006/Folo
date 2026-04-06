@@ -57,6 +57,9 @@ export const RemotionRoot: React.FC = () => {
         width={video.width}
         height={video.height}
         defaultProps={defaultProps}
+        calculateMetadata={async ({ props }) => ({
+          durationInFrames: Math.ceil(props.audioDuration * props.fps),
+        })}
       />
       <Composition
         id="Thumbnail"
