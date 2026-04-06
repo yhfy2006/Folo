@@ -5,6 +5,7 @@ import path from "pathe"
 
 import { closeDatabase, initDatabase } from "./database"
 import { registerIpcHandlers } from "./ipc-handlers"
+import { initChannels } from "./pipeline/channel-init"
 import { startPipelineScheduler, stopPipelineScheduler } from "./pipeline-scheduler"
 import { startScheduler, stopScheduler } from "./scheduler"
 import { initWorkspace } from "./workspace"
@@ -56,6 +57,9 @@ app.whenReady().then(async () => {
 
   // Initialize Claude workspace (skills, CLAUDE.md)
   initWorkspace()
+
+  // Initialize channels (copy bundled templates, auto-bind groups, sync V1 prefs)
+  initChannels()
 
   // Register IPC handlers
   registerIpcHandlers()
