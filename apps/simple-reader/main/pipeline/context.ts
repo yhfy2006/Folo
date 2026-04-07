@@ -4,6 +4,7 @@ import type { UserPreferences } from "../preferences"
 import { loadPreferences } from "../preferences"
 import type { SubtitleSegment } from "../tts"
 import type { Channel } from "./channel-types"
+import type { DiscoverySignal } from "./types"
 
 export interface PipelineContext {
   // Immutable config
@@ -18,6 +19,9 @@ export interface PipelineContext {
 
   // Pre-stage: YouTube insights
   youtubeInsights?: string
+
+  // Pre-stage: discovery signals
+  discoverySignals?: DiscoverySignal[]
 
   // Stage 1: report
   reportContent?: string

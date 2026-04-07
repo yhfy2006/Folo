@@ -35,6 +35,11 @@ export interface Entry {
   read: number
 }
 
+export interface EntryWithFeed extends Entry {
+  feed_title: string | null
+  feed_category: string | null
+}
+
 export interface FeedGroup {
   id: string
   name: string

@@ -3,6 +3,7 @@ import type { PipelineContext } from "./context"
 export type StageName =
   | "verify"
   | "reflect"
+  | "discover"
   | "report"
   | "podcast"
   | "audio"
@@ -21,4 +22,15 @@ export interface StageDefinition {
   label: string
   shouldRun: (ctx: PipelineContext) => boolean
   run: (ctx: PipelineContext, callbacks: StageCallbacks) => Promise<PipelineContext>
+}
+
+export interface DiscoverySignal {
+  entryId: string
+  title: string
+  heatScore: number
+  signals: {
+    sourceOverlap: number
+    recency: number
+  }
+  overlappingSources: string[]
 }
