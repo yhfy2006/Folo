@@ -11,6 +11,7 @@ import type { StageName } from "./types"
 const ALL_STAGES: StageName[] = [
   "verify",
   "reflect",
+  "discover",
   "report",
   "podcast",
   "audio",
@@ -140,6 +141,26 @@ export function createChannel(
   // Create directory structure
   fs.mkdirSync(promptsDir, { recursive: true })
   fs.mkdirSync(skillsDir, { recursive: true })
+
+  const contextDir = path.join(channelDir, "context")
+  fs.mkdirSync(contextDir, { recursive: true })
+
+  // Write default context files
+  fs.writeFileSync(
+    path.join(contextDir, "audience.md"),
+    "# Audience Profile\n\nNo data yet. Will be generated after first reflect run.\n",
+    "utf-8",
+  )
+  fs.writeFileSync(
+    path.join(contextDir, "style.md"),
+    "# Content Style\n\nNo data yet. Will be generated after first reflect run.\n",
+    "utf-8",
+  )
+  fs.writeFileSync(
+    path.join(contextDir, "guidelines.md"),
+    "# Content Guidelines\n\n## Prohibited\n- (list content types or terms to avoid)\n\n## Required Elements\n- (list elements every episode must include)\n\n## Format Requirements\n- (list hard format constraints)\n",
+    "utf-8",
+  )
 
   // Build default channel config
   const config: Omit<Channel, "promptDir" | "skillsDir"> & {

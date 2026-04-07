@@ -7,6 +7,7 @@ import { loadChannelByGroupId } from "./channel-loader"
 import type { PipelineContext } from "./context"
 import { createContext, saveContext } from "./context"
 import { audioStage } from "./stages/audio"
+import { discoverStage } from "./stages/discover"
 import { podcastStage } from "./stages/podcast"
 import { publishStage } from "./stages/publish"
 import { reflectStage } from "./stages/reflect"
@@ -36,6 +37,7 @@ export interface PipelineCallbacks {
 const ALL_STAGES: StageDefinition[] = [
   verifyStage,
   reflectStage,
+  discoverStage,
   reportStage,
   podcastStage,
   audioStage,
@@ -111,7 +113,7 @@ async function executePipeline(
       ctx = await stage.run(ctx, { onStatus: callbacks.onStatus })
     } catch (err) {
       // Video, YouTube, Shorts failures are non-fatal
-      const nonFatal: StageName[] = ["reflect", "video", "youtube", "shorts"]
+      const nonFatal: StageName[] = ["reflect", "discover", "video", "youtube", "shorts"]
       if (nonFatal.includes(stage.name)) {
         console.info(`[pipeline] ${stage.name} failed (non-fatal):`, err)
         callbacks.onStatus(`${stage.label} skipped: ${err}`)

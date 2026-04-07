@@ -22,6 +22,7 @@
   "stages": [
     "verify",
     "reflect",
+    "discover",
     "report",
     "podcast",
     "audio",
