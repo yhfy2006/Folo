@@ -102,6 +102,34 @@ export function writeSkill(channel: Channel, skillName: string, content: string)
   writeFileSync(filePath, content, "utf-8")
 }
 
+/**
+ * Load all `.md` files from the channel's context/ directory.
+ * Returns XML-tagged context blocks, or empty string if no context exists.
+ */
+export function loadChannelContext(channel: Channel): string {
+  const contextDir = join(channel.promptDir, "..", "context")
+
+  if (!existsSync(contextDir)) {
+    return ""
+  }
+
+  const files = readdirSync(contextDir)
+    .filter((f) => f.endsWith(".md"))
+    .sort()
+
+  if (files.length === 0) {
+    return ""
+  }
+
+  return files
+    .map((f) => {
+      const name = f.replace(".md", "")
+      const content = readFileSync(join(contextDir, f), "utf-8")
+      return `<context name="${name}">\n${content}\n</context>`
+    })
+    .join("\n\n")
+}
+
 // ── Helpers ────────────────────────────────────────────────────────
 
 function resolvePromptPath(channel: Channel, promptName: string): string {
