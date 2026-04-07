@@ -11,7 +11,7 @@ import { copyShortsBgm, downloadShortsOGImage, renderShorts } from "../../video-
 import { refreshAccessToken, uploadVideo } from "../../youtube"
 import { substituteTemplate } from "../channel-types"
 import type { PipelineContext } from "../context"
-import { loadPrompt } from "../prompt-loader"
+import { loadChannelContext, loadPrompt } from "../prompt-loader"
 import type { StageCallbacks, StageDefinition } from "../types"
 
 /**
@@ -221,11 +221,15 @@ export const shortsStage: StageDefinition = {
     let shortsPromptOverride: string | undefined
     if (ctx.channel) {
       try {
-        shortsPromptOverride = loadPrompt(ctx.channel, "shorts.md", {
-          date: ctx.date,
-          reportContent: ctx.reportContent!,
-        })
-        console.info("[shorts] Using channel prompt override")
+        const channelContext = loadChannelContext(ctx.channel)
+        const contextPrefix = channelContext ? `${channelContext}\n\n` : ""
+        shortsPromptOverride =
+          contextPrefix +
+          loadPrompt(ctx.channel, "shorts.md", {
+            date: ctx.date,
+            reportContent: ctx.reportContent!,
+          })
+        console.info("[shorts] Using channel prompt override (with context)")
       } catch (err) {
         console.info("[shorts] Channel prompt not found, using defaults:", err)
       }

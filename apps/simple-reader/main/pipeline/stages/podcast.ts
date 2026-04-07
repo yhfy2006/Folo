@@ -1,6 +1,6 @@
 import { generatePodcastScriptToString } from "../../ai-report"
 import type { PipelineContext } from "../context"
-import { loadPrompt } from "../prompt-loader"
+import { loadChannelContext, loadPrompt } from "../prompt-loader"
 import type { StageCallbacks, StageDefinition } from "../types"
 
 export const podcastStage: StageDefinition = {
@@ -14,11 +14,15 @@ export const podcastStage: StageDefinition = {
     let promptOverride: string | undefined
     if (ctx.channel) {
       try {
-        promptOverride = loadPrompt(ctx.channel, "podcast.md", {
-          date: ctx.date,
-          reportContent: ctx.reportContent!,
-        })
-        console.info("[podcast] Using channel prompt override")
+        const channelContext = loadChannelContext(ctx.channel)
+        const contextPrefix = channelContext ? `${channelContext}\n\n` : ""
+        promptOverride =
+          contextPrefix +
+          loadPrompt(ctx.channel, "podcast.md", {
+            date: ctx.date,
+            reportContent: ctx.reportContent!,
+          })
+        console.info("[podcast] Using channel prompt override (with context)")
       } catch (err) {
         console.info("[podcast] Channel prompt not found, using defaults:", err)
       }
