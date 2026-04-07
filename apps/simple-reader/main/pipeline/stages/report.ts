@@ -11,7 +11,9 @@ export const reportStage: StageDefinition = {
     callbacks.onStatus("Generating AI report...")
 
     // Load channel prompt overrides when available
-    let promptOverrides: { screeningPrompt?: string; reportPrompt?: string } | undefined
+    let promptOverrides:
+      | { screeningPrompt?: string; reportPrompt?: string; screeningExtra?: string }
+      | undefined
     if (ctx.channel) {
       try {
         const channelContext = loadChannelContext(ctx.channel)
@@ -24,6 +26,28 @@ export const reportStage: StageDefinition = {
         console.info("[report] Using channel prompt overrides (with context)")
       } catch (err) {
         console.info("[report] Channel prompt not found, using defaults:", err)
+      }
+    }
+
+    // Inject discovery signals into screening prompt
+    if (ctx.discoverySignals?.length) {
+      const hotSignals = ctx.discoverySignals.filter((s) => s.heatScore >= 5)
+      if (hotSignals.length > 0) {
+        const annotations = hotSignals
+          .map(
+            (s) =>
+              `- "${s.title}" 🔥 ${s.heatScore}/10 (${s.overlappingSources.length} sources: ${s.overlappingSources.join(", ")})`,
+          )
+          .join("\n")
+        const extra = `\n## Topic Heat Reference
+Some topics below were reported by multiple sources simultaneously, indicating trending status.
+Heat scores are reference signals only. Prioritize audience relevance over heat.
+
+${annotations}\n`
+        if (!promptOverrides) {
+          promptOverrides = {}
+        }
+        promptOverrides.screeningExtra = extra
       }
     }
 

@@ -41,7 +41,7 @@ export async function generateReport(
   groupId?: string,
   youtubeInsights?: string,
   dryRun?: boolean,
-  promptOverrides?: { screeningPrompt?: string; reportPrompt?: string },
+  promptOverrides?: { screeningPrompt?: string; reportPrompt?: string; screeningExtra?: string },
 ): Promise<void> {
   const prefs = loadPreferences()
   console.info("[ai-report] Preferences:", JSON.stringify(prefs))
@@ -112,9 +112,12 @@ export async function generateReport(
   )
 
   // Stage 1: Screening - use channel prompt override or built-in prompt
-  const screeningPrompt =
+  const baseScreeningPrompt =
     promptOverrides?.screeningPrompt ||
     buildScreeningPrompt(entriesToScreen, effectivePrefs, youtubeInsights)
+  const screeningPrompt = promptOverrides?.screeningExtra
+    ? baseScreeningPrompt + promptOverrides.screeningExtra
+    : baseScreeningPrompt
   console.info("[ai-report] Screening prompt length:", screeningPrompt.length, "chars")
   let screeningResult: string
 
@@ -917,7 +920,7 @@ export async function generateReportToString(
   groupId?: string,
   youtubeInsights?: string,
   dryRun?: boolean,
-  promptOverrides?: { screeningPrompt?: string; reportPrompt?: string },
+  promptOverrides?: { screeningPrompt?: string; reportPrompt?: string; screeningExtra?: string },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let fullContent = ""
