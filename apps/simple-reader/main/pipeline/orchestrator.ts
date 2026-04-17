@@ -3,9 +3,12 @@ import os from "node:os"
 
 import path from "pathe"
 
+import { queryAll } from "../database"
 import { loadChannelByGroupId } from "./channel-loader"
 import type { PipelineContext } from "./context"
 import { createContext, saveContext } from "./context"
+import { isVideoProcessed, markVideoProcessed, pruneProcessedVideos } from "./signalist-dedup"
+import type { CandidateVideo, RenderedVideo } from "./signalist-types"
 import { audioStage } from "./stages/audio"
 import { discoverStage } from "./stages/discover"
 import { podcastStage } from "./stages/podcast"
@@ -17,6 +20,11 @@ import { uploadStage } from "./stages/upload"
 import { verifyStage } from "./stages/verify"
 import { videoStage } from "./stages/video"
 import { youtubeStage } from "./stages/youtube"
+import { SIGNALIST_STAGES } from "./stages-signalist"
+import { extractHighlights } from "./stages-signalist/extract"
+import { renderOneShorts } from "./stages-signalist/render"
+import { generateScripts } from "./stages-signalist/script"
+import { transcribeVideo } from "./stages-signalist/transcribe"
 import type { StageDefinition, StageName } from "./types"
 
 export interface PipelineResult {
@@ -66,7 +74,6 @@ export async function runPipeline(
 ): Promise<void> {
   const ctx = createContext({ groupId, dryRun: options?.dryRun })
 
-  // Resolve channel from groupId so stages can access channel config
   if (groupId) {
     const channel = loadChannelByGroupId(groupId)
     if (channel) {
@@ -74,7 +81,11 @@ export async function runPipeline(
     }
   }
 
-  await executePipeline(ctx, ALL_STAGES, callbacks)
+  if (ctx.channel?.pipelineType === "signalist") {
+    await executeSignalistPipeline(ctx, callbacks)
+  } else {
+    await executePipeline(ctx, ALL_STAGES, callbacks)
+  }
 }
 
 export async function runFrom(
@@ -135,6 +146,173 @@ async function executePipeline(
     date: ctx.date,
     youtubeUrl: ctx.youtubeUrl,
   })
+}
+
+async function executeSignalistPipeline(
+  initialCtx: PipelineContext,
+  callbacks: PipelineCallbacks,
+): Promise<void> {
+  let ctx = initialCtx
+  const channel = ctx.channel!
+
+  // Prune old dedup entries
+  pruneProcessedVideos(channel.id)
+
+  // Step 1: Discover
+  callbacks.onStage("discover")
+  callbacks.onProgress(0, 8)
+  try {
+    const discoverDef = SIGNALIST_STAGES.find((s) => s.name === "discover")!
+    ctx = await discoverDef.run(ctx, { onStatus: callbacks.onStatus })
+  } catch (err) {
+    callbacks.onStatus(`Discover skipped: ${err}`)
+  }
+
+  // Build candidate videos from discovery signals
+  const candidates: CandidateVideo[] = []
+  if (ctx.discoverySignals) {
+    for (const signal of ctx.discoverySignals) {
+      const entry = queryAll<{ id: string; url: string; title: string; content: string }>(
+        "SELECT id, url, title, content FROM entries WHERE id = ?",
+        [signal.entryId],
+      )[0]
+      if (!entry?.url) continue
+
+      const videoId = extractYouTubeVideoId(entry.url)
+      if (!videoId) continue
+      if (isVideoProcessed(channel.id, videoId)) continue
+
+      candidates.push({
+        videoId,
+        title: entry.title || signal.title,
+        channelName: signal.overlappingSources[0] || "Unknown",
+        description: entry.content?.slice(0, 500) || "",
+        duration: 0,
+        url: entry.url,
+        publishDate: new Date().toISOString(),
+      })
+    }
+  }
+  ctx = { ...ctx, candidateVideos: candidates }
+  callbacks.onStatus(`Found ${candidates.length} new candidate videos`)
+
+  // Step 2: Screen
+  callbacks.onStage("screen")
+  callbacks.onProgress(1, 8)
+  const screenDef = SIGNALIST_STAGES.find((s) => s.name === "screen")!
+  ctx = await screenDef.run(ctx, { onStatus: callbacks.onStatus })
+
+  const passedVideos = ctx.screenedVideos?.filter((s) => s.pass) || []
+  if (passedVideos.length === 0) {
+    callbacks.onStatus("No videos passed screening")
+    callbacks.onProgress(8, 8)
+    callbacks.onDone({ pageUrl: "", audioUrl: "", date: ctx.date })
+    return
+  }
+
+  // Steps 3-6: Per-video processing loop
+  const allRendered: RenderedVideo[] = []
+  const workDir = path.join(os.tmpdir(), `signalist-${ctx.date}`)
+  fs.mkdirSync(workDir, { recursive: true })
+
+  for (let vi = 0; vi < passedVideos.length; vi++) {
+    const screened = passedVideos[vi]!
+    const { video } = screened
+    callbacks.onStatus(
+      `Processing video ${vi + 1}/${passedVideos.length}: ${video.title.slice(0, 50)}...`,
+    )
+
+    // 3. Transcribe
+    callbacks.onStage("transcribe")
+    callbacks.onProgress(2, 8)
+    const transcript = await transcribeVideo(video, workDir, callbacks.onStatus)
+    if (!transcript) {
+      callbacks.onStatus(`Skipping ${video.title}: no transcript`)
+      continue
+    }
+
+    // 4. Extract
+    callbacks.onStage("extract")
+    callbacks.onProgress(3, 8)
+    const clips = await extractHighlights(transcript, channel, callbacks.onStatus)
+    if (clips.length === 0) {
+      callbacks.onStatus(`No compelling highlights found in: ${video.title}`)
+      markVideoProcessed(channel.id, video.videoId)
+      continue
+    }
+    callbacks.onStatus(
+      `Found ${clips.length} highlights (scores: ${clips.map((c) => c.viralScore).join(", ")})`,
+    )
+
+    // 5. Script
+    callbacks.onStage("script")
+    callbacks.onProgress(4, 8)
+    const scripts = await generateScripts(clips, channel, callbacks.onStatus)
+
+    // 6. Render
+    callbacks.onStage("render")
+    callbacks.onProgress(5, 8)
+    for (let ci = 0; ci < Math.min(clips.length, scripts.length); ci++) {
+      try {
+        const rendered = await renderOneShorts(
+          clips[ci]!,
+          scripts[ci]!,
+          video.url,
+          video.videoId,
+          video.title,
+          video.channelName,
+          channel,
+          workDir,
+          callbacks.onStatus,
+        )
+        if (rendered) allRendered.push(rendered)
+      } catch (err) {
+        console.warn(`[signalist] Render failed for clip ${ci + 1}:`, err)
+        callbacks.onStatus(`Render failed for clip ${ci + 1}: ${err}`)
+      }
+    }
+
+    markVideoProcessed(channel.id, video.videoId)
+  }
+
+  ctx = { ...ctx, renderedVideos: allRendered }
+
+  if (allRendered.length === 0) {
+    callbacks.onStatus("No Shorts rendered")
+    callbacks.onProgress(8, 8)
+    callbacks.onDone({ pageUrl: "", audioUrl: "", date: ctx.date })
+    return
+  }
+
+  // Step 7: Upload
+  callbacks.onStage("upload")
+  callbacks.onProgress(6, 8)
+  callbacks.onStatus(`${allRendered.length} Shorts rendered and ready for upload`)
+
+  // Step 8: Publish
+  callbacks.onStage("publish")
+  callbacks.onProgress(7, 8)
+
+  callbacks.onProgress(8, 8)
+  callbacks.onDone({
+    pageUrl: allRendered[0]?.filePath || "",
+    audioUrl: "",
+    date: ctx.date,
+    youtubeUrl: undefined,
+  })
+}
+
+function extractYouTubeVideoId(url: string): string | null {
+  const patterns = [
+    /youtube\.com\/watch\?v=([\w-]{11})/,
+    /youtu\.be\/([\w-]{11})/,
+    /youtube\.com\/embed\/([\w-]{11})/,
+  ]
+  for (const pattern of patterns) {
+    const match = url.match(pattern)
+    if (match) return match[1]!
+  }
+  return null
 }
 
 function saveContextSnapshot(ctx: PipelineContext): void {
