@@ -69,3 +69,18 @@ export interface ShortsData {
   youtubeTitle: string
   bgmPath?: string
 }
+
+export interface SignalistSegment {
+  type: "text" | "clip"
+  text?: string
+  videoPath?: string
+  subtitleText?: string
+  durationFrames: number
+}
+
+export interface SignalistShortsData {
+  segments: SignalistSegment[]
+  totalDurationSeconds: number
+  fps: number
+  bgmPath?: string
+}
