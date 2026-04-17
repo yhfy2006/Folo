@@ -12,6 +12,11 @@ export type StageName =
   | "video"
   | "youtube"
   | "shorts"
+  | "screen"
+  | "transcribe"
+  | "extract"
+  | "script"
+  | "render"
 
 export interface StageCallbacks {
   onStatus: (status: string) => void

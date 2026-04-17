@@ -4,6 +4,14 @@ import type { UserPreferences } from "../preferences"
 import { loadPreferences } from "../preferences"
 import type { SubtitleSegment } from "../tts"
 import type { Channel } from "./channel-types"
+import type {
+  CandidateVideo,
+  ExtractedClip,
+  RenderedVideo,
+  ScreenedVideo,
+  ShortsScript,
+  TranscriptData,
+} from "./signalist-types"
 import type { DiscoverySignal } from "./types"
 
 export interface PipelineContext {
@@ -53,6 +61,14 @@ export interface PipelineContext {
   // Stage 8: shorts
   shortsUrl?: string
   shortsUrls?: string[]
+
+  // Signalist stages
+  candidateVideos?: CandidateVideo[]
+  screenedVideos?: ScreenedVideo[]
+  currentTranscript?: TranscriptData
+  extractedClips?: ExtractedClip[]
+  signalistScripts?: ShortsScript[]
+  renderedVideos?: RenderedVideo[]
 
   // Options
   skipUpload?: boolean

@@ -28,6 +28,17 @@ export interface ChannelWeb {
   footerCta?: string
 }
 
+// ── Signalist pipeline configuration ────────────────────────────────
+
+export interface SignalistConfig {
+  topics: string[]
+  minVideoDuration: number // seconds, default 600
+  viralScoreThreshold: number // 0-10, default 7
+  maxShortsPerVideo: number // default 5
+  shortsTargetDuration: number // seconds, default 58
+  bgmDir: string // relative path to BGM assets
+}
+
 // ── Channel definition ──────────────────────────────────────────────
 
 export interface Channel {
@@ -38,6 +49,8 @@ export interface Channel {
   tts: ChannelTTS
   youtube?: ChannelYouTube
   web?: ChannelWeb
+  pipelineType?: "standard" | "signalist"
+  signalist?: SignalistConfig
   stages: StageName[]
   promptDir: string
   skillsDir: string
