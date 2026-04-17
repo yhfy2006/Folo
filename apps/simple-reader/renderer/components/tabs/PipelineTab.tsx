@@ -14,6 +14,11 @@ const PIPELINE_STAGES = [
   { name: "video", label: "Video" },
   { name: "youtube", label: "YouTube" },
   { name: "shorts", label: "Shorts" },
+  { name: "screen", label: "Screen Videos" },
+  { name: "transcribe", label: "Transcribe" },
+  { name: "extract", label: "Extract Highlights" },
+  { name: "script", label: "Generate Scripts" },
+  { name: "render", label: "Render Shorts" },
 ] as const
 
 type StageStatus = "completed" | "active" | "failed" | "pending"
@@ -195,38 +200,42 @@ function StageRow({ label, status }: { label: string; status: StageStatus }) {
 
 function StageIcon({ status }: { status: StageStatus }) {
   switch (status) {
-    case "completed":
+    case "completed": {
       return (
         <span className="bg-[var(--status-success)]/20 flex size-5 items-center justify-center rounded-full text-xs text-[var(--status-success)]">
           &#x2713;
         </span>
       )
-    case "active":
+    }
+    case "active": {
       return (
         <span className="relative flex size-5 items-center justify-center">
           <span className="absolute inline-flex size-3 animate-ping rounded-full bg-[var(--status-running)] opacity-40" />
           <span className="inline-block size-2.5 rounded-full bg-[var(--status-running)]" />
         </span>
       )
-    case "failed":
+    }
+    case "failed": {
       return (
         <span className="bg-[var(--status-error)]/20 flex size-5 items-center justify-center rounded-full text-xs text-[var(--status-error)]">
           &#x2717;
         </span>
       )
-    default:
+    }
+    default: {
       return (
         <span className="flex size-5 items-center justify-center">
           <span className="border-[var(--fg-muted)]/40 inline-block size-2.5 rounded-full border-2" />
         </span>
       )
+    }
   }
 }
 
 function colorizeLogLine(line: string): string {
   if (/Stage/i.test(line)) return "text-[var(--accent-orange)]"
-  if (/[✓]/.test(line)) return "text-[var(--status-success)]"
-  if (/[Error✗]/i.test(line)) return "text-[var(--status-error)]"
+  if (/✓/.test(line)) return "text-[var(--status-success)]"
+  if (/[Ero✗]/i.test(line)) return "text-[var(--status-error)]"
   return "text-[var(--fg-muted)]"
 }
 
