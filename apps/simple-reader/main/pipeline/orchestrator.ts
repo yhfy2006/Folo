@@ -284,21 +284,59 @@ async function executeSignalistPipeline(
     return
   }
 
-  // Step 7: Upload
+  // Step 7: Upload to YouTube
   callbacks.onStage("upload")
   callbacks.onProgress(6, 8)
-  callbacks.onStatus(`${allRendered.length} Shorts rendered and ready for upload`)
 
-  // Step 8: Publish
+  if (ctx.dryRun || ctx.skipUpload) {
+    callbacks.onStatus(`Dry run: ${allRendered.length} Shorts rendered, skipping upload`)
+  } else if (ctx.prefs.youtubeEnabled && ctx.prefs.youtubeRefreshToken) {
+    const { refreshAccessToken, uploadVideo } = await import("../youtube")
+    const token = await refreshAccessToken(
+      ctx.prefs.youtubeRefreshToken,
+      ctx.prefs.youtubeClientId,
+      ctx.prefs.youtubeClientSecret,
+    )
+
+    const shortsUrls: string[] = []
+    for (let i = 0; i < allRendered.length; i++) {
+      const rendered = allRendered[i]!
+      callbacks.onStatus(`Uploading Shorts ${i + 1}/${allRendered.length}: ${rendered.title}`)
+
+      try {
+        const videoId = await uploadVideo({
+          accessToken: token,
+          videoPath: rendered.filePath,
+          title: rendered.title,
+          description: rendered.description,
+          tags: rendered.tags,
+          categoryId: "22",
+          privacyStatus: "public",
+          defaultLanguage: "en",
+          onProgress: (pct) => callbacks.onStatus(`Uploading ${i + 1}: ${pct}%`),
+        })
+        shortsUrls.push(`https://www.youtube.com/shorts/${videoId}`)
+        callbacks.onStatus(`Uploaded: https://www.youtube.com/shorts/${videoId}`)
+      } catch (err) {
+        console.warn(`[signalist] Upload failed for ${rendered.title}:`, err)
+        callbacks.onStatus(`Upload failed: ${err}`)
+      }
+    }
+    ctx = { ...ctx, shortsUrls }
+  } else {
+    callbacks.onStatus("YouTube not configured — skipping upload")
+  }
+
+  // Step 8: Publish (already public on upload)
   callbacks.onStage("publish")
   callbacks.onProgress(7, 8)
 
   callbacks.onProgress(8, 8)
   callbacks.onDone({
-    pageUrl: allRendered[0]?.filePath || "",
+    pageUrl: ctx.shortsUrls?.[0] || allRendered[0]?.filePath || "",
     audioUrl: "",
     date: ctx.date,
-    youtubeUrl: undefined,
+    youtubeUrl: ctx.shortsUrls?.[0],
   })
 }
 
