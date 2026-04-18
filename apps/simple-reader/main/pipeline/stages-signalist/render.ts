@@ -4,6 +4,8 @@ import fs from "node:fs"
 import path from "pathe"
 
 import { copyBgmToPublic, copySegmentToPublic, renderSignalistShorts } from "../../signalist-render"
+import type { BgmAnalysis } from "../bgm-analyzer"
+import { analyzeBgm } from "../bgm-analyzer"
 import type { PipelineContext } from "../context"
 import type { ExtractedClip, RenderedVideo, ShortsScript } from "../signalist-types"
 import type { StageCallbacks, StageDefinition } from "../types"
@@ -52,7 +54,142 @@ function pickRandomBgm(bgmDir: string): string | null {
 // ── Core per-clip render function ────────────────────────────────────
 
 const FPS = 30
+
+// ── Segment types ────────────────────────────────────────────────────
+
+type RemotionSegment = {
+  type: "text" | "clip"
+  text?: string
+  videoPath?: string
+  subtitleText?: string
+  durationFrames: number
+}
+
+// ── Fixed-timing segment builder (fallback) ──────────────────────────
+
 const TEXT_CARD_DURATION_FRAMES = 90 // 3 seconds at 30 fps
+
+function buildFixedSegments(
+  clip: ExtractedClip,
+  script: ShortsScript,
+  publicSegmentName: string,
+  fps: number,
+): { segments: RemotionSegment[] } {
+  const startSec = srtToSeconds(clip.startTime)
+  const endSec = srtToSeconds(clip.endTime)
+  const segments: RemotionSegment[] = []
+
+  if (script.openingCard) {
+    segments.push({
+      type: "text",
+      text: script.openingCard,
+      durationFrames: TEXT_CARD_DURATION_FRAMES,
+    })
+  }
+
+  if (script.segments.length > 0) {
+    for (const seg of script.segments) {
+      if (seg.textCard) {
+        segments.push({
+          type: "text",
+          text: seg.textCard,
+          durationFrames: TEXT_CARD_DURATION_FRAMES,
+        })
+      }
+      const segStartSec = srtToSeconds(seg.clipStart)
+      const segEndSec = srtToSeconds(seg.clipEnd)
+      const durationSec = Math.max(1, segEndSec - segStartSec)
+      segments.push({
+        type: "clip",
+        videoPath: publicSegmentName,
+        subtitleText: seg.textCard,
+        durationFrames: Math.round(durationSec * fps),
+      })
+    }
+  } else {
+    const fullDurationSec = Math.max(1, endSec - startSec)
+    segments.push({
+      type: "clip",
+      videoPath: publicSegmentName,
+      durationFrames: Math.round(fullDurationSec * fps),
+    })
+  }
+
+  if (script.closingCard) {
+    segments.push({
+      type: "text",
+      text: script.closingCard,
+      durationFrames: TEXT_CARD_DURATION_FRAMES,
+    })
+  }
+
+  return { segments }
+}
+
+// ── Beat-synced segment builder ──────────────────────────────────────
+
+function buildBeatSyncedSegments(
+  clip: ExtractedClip,
+  script: ShortsScript,
+  publicSegmentName: string,
+  bgmAnalysis: BgmAnalysis,
+  fps: number,
+): { segments: RemotionSegment[] } {
+  const { syncPoints } = bgmAnalysis
+  const segments: RemotionSegment[] = []
+
+  // Collect all text cards in order
+  const textCards: string[] = []
+  if (script.openingCard) textCards.push(script.openingCard)
+  for (const seg of script.segments) {
+    if (seg.textCard) textCards.push(seg.textCard)
+  }
+  if (script.closingCard) textCards.push(script.closingCard)
+
+  if (textCards.length === 0) {
+    // No text cards at all — fall back to fixed
+    return buildFixedSegments(clip, script, publicSegmentName, fps)
+  }
+
+  // Assign each text card to a sync point
+  // Phase 1 (first ~56s): dense — every sync point
+  // Phase 2 (after 56s): sparse — every 4 sync points (~32s intervals)
+  const cardAssignments: Array<{ text: string; syncTime: number }> = []
+  let syncIdx = 0
+
+  for (let i = 0; i < textCards.length && syncIdx < syncPoints.length; i++) {
+    cardAssignments.push({ text: textCards[i]!, syncTime: syncPoints[syncIdx]!.time })
+    if (syncPoints[syncIdx]!.time < 56) {
+      syncIdx += 1
+    } else {
+      syncIdx += 4
+    }
+  }
+
+  // Build segments from card assignments
+  for (let i = 0; i < cardAssignments.length; i++) {
+    const card = cardAssignments[i]!
+    const isFirst = i === 0
+    const isLast = i === cardAssignments.length - 1
+
+    const cardDurSec = isFirst || isLast ? 3 : 2
+    segments.push({ type: "text", text: card.text, durationFrames: Math.round(cardDurSec * fps) })
+
+    if (!isLast) {
+      const nextCardTime = cardAssignments[i + 1]!.syncTime
+      const clipDurSec = nextCardTime - card.syncTime - cardDurSec
+      if (clipDurSec > 0.5) {
+        segments.push({
+          type: "clip",
+          videoPath: publicSegmentName,
+          durationFrames: Math.round(clipDurSec * fps),
+        })
+      }
+    }
+  }
+
+  return { segments }
+}
 
 /**
  * Download, render, and return a RenderedVideo for one clip+script pair.
@@ -125,70 +262,22 @@ export async function renderOneShorts(
     onStatus(`[render] No BGM found in bgmDir="${bgmDir}", rendering without music`)
   }
 
-  // 4. Build Remotion segments array
-  //    Pattern: opening card → (transition card → clip segment)* → closing card
-  type RemotionSegment = {
-    type: "text" | "clip"
-    text?: string
-    videoPath?: string
-    subtitleText?: string
-    durationFrames: number
-  }
-
-  const segments: RemotionSegment[] = []
-
-  // Opening card
-  if (script.openingCard) {
-    segments.push({
-      type: "text",
-      text: script.openingCard,
-      durationFrames: TEXT_CARD_DURATION_FRAMES,
-    })
-  }
-
-  if (script.segments.length > 0) {
-    // Interleave: transition text card → clip segment
-    for (const seg of script.segments) {
-      // Transition text card
-      if (seg.textCard) {
-        segments.push({
-          type: "text",
-          text: seg.textCard,
-          durationFrames: TEXT_CARD_DURATION_FRAMES,
-        })
-      }
-
-      // Video clip sub-segment
-      const segStartSec = srtToSeconds(seg.clipStart)
-      const segEndSec = srtToSeconds(seg.clipEnd)
-      const durationSec = Math.max(1, segEndSec - segStartSec)
-      const durationFrames = Math.round(durationSec * FPS)
-
-      segments.push({
-        type: "clip",
-        videoPath: publicSegmentName,
-        subtitleText: seg.textCard,
-        durationFrames,
-      })
+  // 4. Analyze BGM for beat-sync timing, then build Remotion segments array
+  let bgmAnalysis: BgmAnalysis | null = null
+  if (bgmSourcePath) {
+    try {
+      bgmAnalysis = await analyzeBgm(bgmSourcePath)
+      onStatus(
+        `[render] BGM analyzed: ${bgmAnalysis.bpm} BPM, ${bgmAnalysis.syncPoints.length} sync points`,
+      )
+    } catch (err) {
+      console.warn("[render] BGM analysis failed, using fixed timing:", err)
     }
-  } else {
-    // No segments — use the full clip as one video segment
-    const fullDurationSec = Math.max(1, endSec - startSec)
-    segments.push({
-      type: "clip",
-      videoPath: publicSegmentName,
-      durationFrames: Math.round(fullDurationSec * FPS),
-    })
   }
 
-  // Closing card
-  if (script.closingCard) {
-    segments.push({
-      type: "text",
-      text: script.closingCard,
-      durationFrames: TEXT_CARD_DURATION_FRAMES,
-    })
-  }
+  const { segments } = bgmAnalysis
+    ? buildBeatSyncedSegments(clip, script, publicSegmentName, bgmAnalysis, FPS)
+    : buildFixedSegments(clip, script, publicSegmentName, FPS)
 
   const totalDurationSeconds = segments.reduce((acc, seg) => acc + seg.durationFrames / FPS, 0)
 
