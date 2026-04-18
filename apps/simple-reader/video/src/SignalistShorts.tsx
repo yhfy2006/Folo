@@ -64,8 +64,11 @@ export const SignalistShorts: React.FC<SignalistShortsData> = ({ segments, bgmPa
               key={i}
               videoPath={seg.videoPath}
               subtitleText={seg.subtitleText}
+              topText={seg.topText}
+              bottomText={seg.bottomText}
               startFrame={seg.startFrame}
               durationFrames={seg.durationFrames}
+              videoStartFrom={seg.videoStartFrom}
             />
           )
         }

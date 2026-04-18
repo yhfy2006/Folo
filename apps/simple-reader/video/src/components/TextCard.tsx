@@ -13,16 +13,16 @@ export const TextCard: React.FC<TextCardProps> = ({ text, startFrame, durationFr
 
   if (localFrame < 0 || localFrame >= durationFrames) return null
 
-  // Fade in over 10 frames, fade out over 10 frames
-  const fadeIn = interpolate(localFrame, [0, 10], [0, 1], { extrapolateRight: "clamp" })
-  const fadeOut = interpolate(localFrame, [durationFrames - 10, durationFrames], [1, 0], {
+  // Fade in over 20 frames (~0.67s), fade out over 15 frames (~0.5s)
+  const fadeIn = interpolate(localFrame, [0, 20], [0, 1], { extrapolateRight: "clamp" })
+  const fadeOut = interpolate(localFrame, [durationFrames - 15, durationFrames], [1, 0], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
   })
   const opacity = Math.min(fadeIn, fadeOut)
 
-  // Subtle scale animation
-  const scale = interpolate(localFrame, [0, 15], [0.95, 1], { extrapolateRight: "clamp" })
+  // Gentle scale-up on entry
+  const scale = interpolate(localFrame, [0, 25], [0.92, 1], { extrapolateRight: "clamp" })
 
   return (
     <div

@@ -75,7 +75,10 @@ export interface SignalistSegment {
   text?: string
   videoPath?: string
   subtitleText?: string
+  topText?: string // bold headline above video (clip segments only)
+  bottomText?: string // bold headline below video (clip segments only)
   durationFrames: number
+  videoStartFrom?: number // frame offset into source video (for clip segments)
 }
 
 export interface SignalistShortsData {
