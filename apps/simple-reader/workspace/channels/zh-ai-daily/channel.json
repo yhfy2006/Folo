@@ -1,0 +1,37 @@
+{
+  "name": "YOMOO 每日AI快送",
+  "language": "zh-CN",
+  "groupId": "",
+  "tts": {
+    "provider": "minimax",
+    "voiceId": "English_Graceful_Lady",
+    "model": "speech-02-hd"
+  },
+  "youtube": {
+    "tags": ["AI", "每日AI快送", "YOMOO", "科技新闻", "人工智能"],
+    "titleTemplate": "YOMOO 每日AI快送 — {{date}}",
+    "descriptionTemplate": "🤖 YOMOO 每日AI快送 — {{date}}\n\n{{summary}}\n\n🎧 播客音频: {{audioUrl}}\n📧 订阅邮件: https://daily.yomoo.net/subscribe/index.html\n\n#AI #每日AI快送 #YOMOO #科技新闻",
+    "shortsDescriptionTemplate": "YOMOO 每日AI快送 — {{date}} #shorts #AI #每日AI快送 #YOMOO"
+  },
+  "web": {
+    "htmlLang": "zh-CN",
+    "brandName": "YOMOO",
+    "ogTitle": "YOMOO 每日AI快送",
+    "footerCta": "如果你想通过阅读文字版更快地获取每日的AI快送信息，欢迎免费订阅我们的mail list"
+  },
+  "stages": [
+    "verify",
+    "reflect",
+    "discover",
+    "report",
+    "podcast",
+    "audio",
+    "upload",
+    "publish",
+    "video",
+    "youtube",
+    "shorts"
+  ],
+  "promptDir": "prompts",
+  "skillsDir": "skills"
+}

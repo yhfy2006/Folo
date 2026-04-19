@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import os from "node:os"
 
+import path from "pathe"
 import { describe, expect, it, vi } from "vitest"
 
 import { createContext } from "../context"
@@ -72,8 +73,9 @@ vi.mock("../../database", () => ({
 }))
 
 vi.mock("../../ai-report", () => ({
-  runClaude: vi.fn(
-    async () => `---
+  runClaude: vi.fn(async () =>
+    JSON.stringify({
+      contentStrategy: `---
 name: content-strategy
 description: Auto-generated content strategy based on YouTube performance data
 ---
@@ -85,7 +87,26 @@ description: Auto-generated content strategy based on YouTube performance data
 - 数字类标题效果好 (Views: 5000)
 
 ## 更新日期
-2026-04-04`,
+2026-04-06`,
+      audienceInsights: `# 受众画像
+
+## 最近话题表现
+- OpenAI 相关话题最受欢迎 (播放: 1200)
+- Shorts 获得更高播放 (5000 vs 1200)
+
+## 更新时间
+2026-04-06`,
+      styleInsights: `# 内容风格
+
+## 标题风格
+- 数字类标题表现更好（如 "3个你必须知道的..."）
+
+## 内容结构
+- 深度分析类视频完播率高
+
+## 更新时间
+2026-04-06`,
+    }),
   ),
 }))
 
@@ -98,11 +119,24 @@ vi.mock("../../workspace", () => ({
 }))
 
 describe("reflect stage", () => {
-  it("shouldRun returns true when youtube enabled and accessToken present", () => {
+  it("shouldRun returns true when youtube enabled and accessToken present and channel set", () => {
+    const tmpChannel = fs.mkdtempSync(path.join(os.tmpdir(), "reflect-sr-"))
+    const channel = {
+      id: "test-ch",
+      name: "Test",
+      language: "zh-CN",
+      groupId: "g1",
+      tts: { provider: "minimax" as const, voiceId: "", model: "speech-02-hd" },
+      stages: ["verify", "reflect", "report"] as any[],
+      promptDir: path.join(tmpChannel, "prompts"),
+      skillsDir: path.join(tmpChannel, "skills"),
+    }
     const ctx = createContext({
       youtubeAccessToken: "test-token",
+      channel,
     })
     expect(reflectStage.shouldRun(ctx)).toBe(true)
+    fs.rmSync(tmpChannel, { recursive: true, force: true })
   })
 
   it("shouldRun returns false when no accessToken", () => {
@@ -110,27 +144,58 @@ describe("reflect stage", () => {
     expect(reflectStage.shouldRun(ctx)).toBe(false)
   })
 
-  it("runs and writes content-strategy.md skill file", async () => {
+  it("shouldRun requires channel", () => {
     const ctx = createContext({
       youtubeAccessToken: "test-token",
     })
+    // No channel set — should return false
+    expect(reflectStage.shouldRun(ctx)).toBe(false)
+  })
 
-    const statuses: string[] = []
-    const result = await reflectStage.run(ctx, {
-      onStatus: (s) => statuses.push(s),
+  it("writes audience.md and style.md to channel context dir", async () => {
+    // Create a temp channel dir structure
+    const tmpChannel = fs.mkdtempSync(path.join(os.tmpdir(), "reflect-ch-"))
+    const promptDir = path.join(tmpChannel, "prompts")
+    const skillsDir = path.join(tmpChannel, "skills")
+    const contextDir = path.join(tmpChannel, "context")
+    fs.mkdirSync(promptDir, { recursive: true })
+    fs.mkdirSync(skillsDir, { recursive: true })
+    fs.mkdirSync(contextDir, { recursive: true })
+
+    const channel = {
+      id: "test-ch",
+      name: "Test",
+      language: "zh-CN",
+      groupId: "g1",
+      tts: { provider: "minimax" as const, voiceId: "", model: "speech-02-hd" },
+      stages: ["verify", "reflect", "report"] as any[],
+      promptDir,
+      skillsDir,
+    }
+
+    const ctx = createContext({
+      youtubeAccessToken: "test-token",
+      channel,
     })
 
-    // Should not mutate context
-    expect(result.date).toBe(ctx.date)
+    await reflectStage.run(ctx, { onStatus: () => {} })
 
-    // Should have written the skill file
-    const skillPath = `${os.tmpdir()}/test-workspace/.claude/skills/content-strategy.md`
-    expect(fs.existsSync(skillPath)).toBe(true)
-    const content = fs.readFileSync(skillPath, "utf-8")
-    expect(content).toContain("content-strategy")
-    expect(content).toContain("选题偏好")
+    // Should have written content-strategy.md to skills dir
+    const strategyPath = path.join(skillsDir, "content-strategy.md")
+    expect(fs.existsSync(strategyPath)).toBe(true)
+    expect(fs.readFileSync(strategyPath, "utf-8")).toContain("选题偏好")
+
+    // Should have written audience.md to context dir
+    const audiencePath = path.join(contextDir, "audience.md")
+    expect(fs.existsSync(audiencePath)).toBe(true)
+    expect(fs.readFileSync(audiencePath, "utf-8")).toContain("受众画像")
+
+    // Should have written style.md to context dir
+    const stylePath = path.join(contextDir, "style.md")
+    expect(fs.existsSync(stylePath)).toBe(true)
+    expect(fs.readFileSync(stylePath, "utf-8")).toContain("内容风格")
 
     // Cleanup
-    fs.rmSync(`${os.tmpdir()}/test-workspace`, { recursive: true, force: true })
+    fs.rmSync(tmpChannel, { recursive: true, force: true })
   })
 })

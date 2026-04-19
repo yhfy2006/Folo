@@ -9,6 +9,22 @@
   --muted: 0 0% 96.1%;
   --muted-foreground: 0 0% 45.1%;
   --accent-color: #ff5c00;
+
+  /* YOMOO Studio design tokens */
+  --surface-primary: #0a0a0a;
+  --surface-secondary: #141414;
+  --surface-tertiary: #1e1e1e;
+  --fg-primary: #ffffff;
+  --fg-secondary: #a1a1aa;
+  --fg-muted: #71717a;
+  --border-subtle: #27272a;
+  --border-default: #3f3f46;
+  --accent-primary: #a855f7;
+  --accent-orange: #ff6b35;
+  --status-success: #22c55e;
+  --status-error: #ef4444;
+  --status-warning: #f59e0b;
+  --status-running: #3b82f6;
 }
 
 [data-theme="dark"] {

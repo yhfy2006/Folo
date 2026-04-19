@@ -1,5 +1,6 @@
 import { generatePodcastScriptToString } from "../../ai-report"
 import type { PipelineContext } from "../context"
+import { loadChannelContext, loadPrompt } from "../prompt-loader"
 import type { StageCallbacks, StageDefinition } from "../types"
 
 export const podcastStage: StageDefinition = {
@@ -9,11 +10,33 @@ export const podcastStage: StageDefinition = {
   run: async (ctx: PipelineContext, callbacks: StageCallbacks): Promise<PipelineContext> => {
     callbacks.onStatus("Generating podcast script...")
 
+    // Load channel prompt override when available
+    let promptOverride: string | undefined
+    if (ctx.channel) {
+      try {
+        const channelContext = loadChannelContext(ctx.channel)
+        const contextPrefix = channelContext ? `${channelContext}\n\n` : ""
+        promptOverride =
+          contextPrefix +
+          loadPrompt(ctx.channel, "podcast.md", {
+            date: ctx.date,
+            reportContent: ctx.reportContent!,
+          })
+        console.info("[podcast] Using channel prompt override (with context)")
+      } catch (err) {
+        console.info("[podcast] Channel prompt not found, using defaults:", err)
+      }
+    }
+
     let podcastScript: string
     try {
-      podcastScript = await generatePodcastScriptToString(ctx.reportContent!, (status) => {
-        callbacks.onStatus(status)
-      })
+      podcastScript = await generatePodcastScriptToString(
+        ctx.reportContent!,
+        (status) => {
+          callbacks.onStatus(status)
+        },
+        promptOverride,
+      )
     } catch (err) {
       throw new Error(`Podcast script generation failed: ${err}`)
     }

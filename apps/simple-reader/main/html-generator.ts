@@ -43,6 +43,7 @@ export function generateHtmlPage(
   date: string,
   podcastScript?: string | null,
   seoDescription?: string,
+  htmlLang?: string,
 ): string {
   const description =
     seoDescription ||
@@ -76,9 +77,10 @@ export function generateHtmlPage(
     : ""
 
   const hasPodcast = renderedPodcast !== null
+  const lang = htmlLang ?? "zh-CN"
 
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${lang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -829,6 +831,7 @@ export async function generateEmailHtml(
   reportMarkdown: string,
   audioUrl: string | null,
   date: string,
+  htmlLang?: string,
 ): Promise<string> {
   let renderedReport = marked.parse(reportMarkdown, { async: false, breaks: true }) as string
 
@@ -855,8 +858,10 @@ export async function generateEmailHtml(
       </tr>`
     : ""
 
+  const emailLang = htmlLang ?? "zh-CN"
+
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${emailLang}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">

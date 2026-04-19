@@ -3,9 +3,25 @@ import { Composition } from "remotion"
 
 import { DailyReport } from "./DailyReport"
 import { ShortsVideo } from "./ShortsVideo"
+import { SignalistShorts } from "./SignalistShorts"
 import { shorts, thumbnail, video } from "./styles/theme"
 import { Thumbnail } from "./Thumbnail"
-import type { ScenesData, ShortsData } from "./types"
+import type { ScenesData, ShortsData, SignalistShortsData } from "./types"
+
+const defaultSignalistProps: SignalistShortsData = {
+  segments: [
+    { type: "text", text: "The moment everything changed.", durationFrames: 90 },
+    {
+      type: "clip",
+      videoPath: "signalist-clip.mp4",
+      subtitleText: "This is incredible...",
+      durationFrames: 300,
+    },
+    { type: "text", text: "Are we ready?", durationFrames: 90 },
+  ],
+  totalDurationSeconds: 16,
+  fps: 30,
+}
 
 const defaultShortsProps: ShortsData = {
   headline: "AI接管电脑",
@@ -80,6 +96,18 @@ export const RemotionRoot: React.FC = () => {
         defaultProps={defaultShortsProps}
         calculateMetadata={async ({ props }) => ({
           durationInFrames: Math.ceil(props.audioDuration * props.fps),
+        })}
+      />
+      <Composition
+        id="SignalistShorts"
+        component={SignalistShorts}
+        durationInFrames={defaultSignalistProps.totalDurationSeconds * defaultSignalistProps.fps}
+        fps={shorts.fps}
+        width={shorts.width}
+        height={shorts.height}
+        defaultProps={defaultSignalistProps}
+        calculateMetadata={async ({ props }) => ({
+          durationInFrames: Math.ceil(props.totalDurationSeconds * props.fps),
         })}
       />
     </>

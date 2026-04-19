@@ -2,7 +2,6 @@ import { spawn } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 
-import { app } from "electron"
 import path from "pathe"
 
 import type { Entry, FeedGroup } from "./database"
@@ -10,6 +9,7 @@ import { execute, queryAll, queryOne, saveDatabase } from "./database"
 import type { UserPreferences } from "./preferences"
 import { loadPreferences } from "./preferences"
 import { fetchArticleContent } from "./readability"
+import { getAppPath } from "./runtime/paths"
 import { formatSkillsPrompt, loadAllSkills } from "./skills"
 import { getWorkspacePath } from "./workspace"
 import type { ChannelVideo } from "./youtube"
@@ -41,6 +41,7 @@ export async function generateReport(
   groupId?: string,
   youtubeInsights?: string,
   dryRun?: boolean,
+  promptOverrides?: { screeningPrompt?: string; reportPrompt?: string; screeningExtra?: string },
 ): Promise<void> {
   const prefs = loadPreferences()
   console.info("[ai-report] Preferences:", JSON.stringify(prefs))
@@ -110,8 +111,13 @@ export async function generateReport(
     `Screening ${entriesToScreen.length} entries from the last ${effectivePrefs.timeRange}h...`,
   )
 
-  // Stage 1: Screening - use the "screening" skill
-  const screeningPrompt = buildScreeningPrompt(entriesToScreen, effectivePrefs, youtubeInsights)
+  // Stage 1: Screening - use channel prompt override or built-in prompt
+  const baseScreeningPrompt =
+    promptOverrides?.screeningPrompt ||
+    buildScreeningPrompt(entriesToScreen, effectivePrefs, youtubeInsights)
+  const screeningPrompt = promptOverrides?.screeningExtra
+    ? baseScreeningPrompt + promptOverrides.screeningExtra
+    : baseScreeningPrompt
   console.info("[ai-report] Screening prompt length:", screeningPrompt.length, "chars")
   let screeningResult: string
 
@@ -165,14 +171,11 @@ export async function generateReport(
     )
   }
 
-  // Stage 3: Generate final report with streaming
+  // Stage 3: Generate final report with streaming (use channel override when available)
   onStatus(`Generating report from ${enrichedEntries.length} articles...`)
-  const reportPrompt = buildReportPrompt(
-    enrichedEntries,
-    effectivePrefs,
-    historicalTopics,
-    deepDiveContext,
-  )
+  const reportPrompt =
+    promptOverrides?.reportPrompt ||
+    buildReportPrompt(enrichedEntries, effectivePrefs, historicalTopics, deepDiveContext)
   console.info("[ai-report] Report prompt length:", reportPrompt.length, "chars")
 
   let fullContent = ""
@@ -821,6 +824,7 @@ export async function generatePodcastScript(
   onStatus: (status: string) => void,
   onDone: () => void,
   onError: (error: string) => void,
+  promptOverride?: string,
 ): Promise<void> {
   const prefs = loadPreferences()
   onStatus("Converting report to podcast script...")
@@ -830,7 +834,7 @@ export async function generatePodcastScript(
   // Read the methodology file for additional context
   let methodology = ""
   try {
-    const appPath = app.getAppPath()
+    const appPath = getAppPath()
     const methodologyPath = path.join(appPath, "resources", "小Lin说视频文案方法论.md")
     methodology = fs.readFileSync(methodologyPath, "utf-8")
     // Strip frontmatter
@@ -845,7 +849,10 @@ export async function generatePodcastScript(
   const now = new Date()
   const spokenDate = `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日`
 
-  const prompt = `${skillsSection}
+  // Use channel-provided prompt when available, otherwise use built-in prompt
+  const prompt =
+    promptOverride ||
+    `${skillsSection}
 
 Your task: Convert the following daily briefing report into a podcast broadcast script (口播文案).
 
@@ -913,6 +920,7 @@ export async function generateReportToString(
   groupId?: string,
   youtubeInsights?: string,
   dryRun?: boolean,
+  promptOverrides?: { screeningPrompt?: string; reportPrompt?: string; screeningExtra?: string },
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let fullContent = ""
@@ -926,6 +934,7 @@ export async function generateReportToString(
       groupId,
       youtubeInsights,
       dryRun,
+      promptOverrides,
     ).catch(reject)
   })
 }
@@ -936,6 +945,7 @@ export async function generateReportToString(
 export async function generatePodcastScriptToString(
   reportContent: string,
   onStatus: (status: string) => void,
+  promptOverride?: string,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     let fullContent = ""
@@ -947,6 +957,7 @@ export async function generatePodcastScriptToString(
       onStatus,
       () => resolve(fullContent),
       (error) => reject(new Error(error)),
+      promptOverride,
     ).catch(reject)
   })
 }
@@ -1072,6 +1083,7 @@ export async function generateShortsScripts(
   count: number,
   onStatus: (status: string) => void,
   excludeTopics?: string[],
+  promptOverride?: string,
 ): Promise<ShortsScript[]> {
   onStatus(`Generating ${count} Shorts script${count > 1 ? "s" : ""}...`)
 
@@ -1092,7 +1104,10 @@ export async function generateShortsScripts(
 
   const skillsSection = formatSkillsPrompt(loadAllSkills())
 
-  const prompt = `${skillsSection}
+  // Use channel-provided prompt when available, otherwise use built-in prompt
+  const prompt =
+    promptOverride ||
+    `${skillsSection}
 
 You are an elite viral short-video scriptwriter for "YOMOO 每日AI快送", a Chinese AI/tech news channel on YouTube Shorts.
 

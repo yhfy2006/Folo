@@ -1,5 +1,6 @@
 import { generateReportToString, generateSeoDescription } from "../../ai-report"
 import type { PipelineContext } from "../context"
+import { loadChannelContext, loadPrompt } from "../prompt-loader"
 import type { StageCallbacks, StageDefinition } from "../types"
 
 export const reportStage: StageDefinition = {
@@ -8,6 +9,47 @@ export const reportStage: StageDefinition = {
   shouldRun: (_ctx: PipelineContext) => true,
   run: async (ctx: PipelineContext, callbacks: StageCallbacks): Promise<PipelineContext> => {
     callbacks.onStatus("Generating AI report...")
+
+    // Load channel prompt overrides when available
+    let promptOverrides:
+      | { screeningPrompt?: string; reportPrompt?: string; screeningExtra?: string }
+      | undefined
+    if (ctx.channel) {
+      try {
+        const channelContext = loadChannelContext(ctx.channel)
+        const contextPrefix = channelContext ? `${channelContext}\n\n` : ""
+        const screeningPrompt =
+          contextPrefix + loadPrompt(ctx.channel, "screening.md", { date: ctx.date })
+        const reportPrompt =
+          contextPrefix + loadPrompt(ctx.channel, "report.md", { date: ctx.date })
+        promptOverrides = { screeningPrompt, reportPrompt }
+        console.info("[report] Using channel prompt overrides (with context)")
+      } catch (err) {
+        console.info("[report] Channel prompt not found, using defaults:", err)
+      }
+    }
+
+    // Inject discovery signals into screening prompt
+    if (ctx.discoverySignals?.length) {
+      const hotSignals = ctx.discoverySignals.filter((s) => s.heatScore >= 5)
+      if (hotSignals.length > 0) {
+        const annotations = hotSignals
+          .map(
+            (s) =>
+              `- "${s.title}" 🔥 ${s.heatScore}/10 (${s.overlappingSources.length} sources: ${s.overlappingSources.join(", ")})`,
+          )
+          .join("\n")
+        const extra = `\n## Topic Heat Reference
+Some topics below were reported by multiple sources simultaneously, indicating trending status.
+Heat scores are reference signals only. Prioritize audience relevance over heat.
+
+${annotations}\n`
+        if (!promptOverrides) {
+          promptOverrides = {}
+        }
+        promptOverrides.screeningExtra = extra
+      }
+    }
 
     let reportContent: string
     try {
@@ -18,6 +60,7 @@ export const reportStage: StageDefinition = {
         ctx.groupId,
         ctx.youtubeInsights,
         ctx.dryRun,
+        promptOverrides,
       )
     } catch (err) {
       throw new Error(`Report generation failed: ${err}`)

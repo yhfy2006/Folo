@@ -1,7 +1,8 @@
 import fs from "node:fs"
 
-import { app } from "electron"
 import path from "pathe"
+
+import { getUserDataPath } from "./runtime/paths"
 
 /**
  * Initialize and return the path to the Claude CLI workspace.
@@ -9,7 +10,7 @@ import path from "pathe"
  * Claude CLI will automatically load when invoked with cwd set here.
  */
 export function getWorkspacePath(): string {
-  const workspacePath = path.join(app.getPath("userData"), "claude-workspace")
+  const workspacePath = path.join(getUserDataPath(), "claude-workspace")
   return workspacePath
 }
 
@@ -23,7 +24,7 @@ export function initWorkspace(): void {
   fs.mkdirSync(builtinDir, { recursive: true })
 
   // Also ensure user global skills directory exists
-  const userSkillsDir = path.join(app.getPath("userData"), "skills")
+  const userSkillsDir = path.join(getUserDataPath(), "skills")
   fs.mkdirSync(userSkillsDir, { recursive: true })
 
   // Write CLAUDE.md (always overwrite to keep in sync with app updates)

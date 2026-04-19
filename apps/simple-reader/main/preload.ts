@@ -160,6 +160,22 @@ const api = {
   // Scheduler
   getSchedulerStatus: () => ipcRenderer.invoke("get-scheduler-status"),
 
+  // Channel Management
+  getChannels: () => ipcRenderer.invoke("get-channels"),
+  getChannel: (channelId: string) => ipcRenderer.invoke("get-channel", channelId),
+  createChannel: (id: string, name: string, language: string, groupId: string) =>
+    ipcRenderer.invoke("create-channel", id, name, language, groupId),
+  updateChannel: (channelId: string, updates: any) =>
+    ipcRenderer.invoke("update-channel", channelId, updates),
+  deleteChannel: (channelId: string) => ipcRenderer.invoke("delete-channel", channelId),
+
+  // Prompt Editing
+  getPromptFiles: (channelId: string) => ipcRenderer.invoke("get-prompt-files", channelId),
+  readPrompt: (channelId: string, promptName: string) =>
+    ipcRenderer.invoke("read-prompt", channelId, promptName),
+  savePrompt: (channelId: string, promptName: string, content: string) =>
+    ipcRenderer.invoke("save-prompt", channelId, promptName, content),
+
   // YouTube
   youtubeGetAuthUrl: () => ipcRenderer.invoke("youtube-get-auth-url"),
   youtubeExchangeCode: (code: string) => ipcRenderer.invoke("youtube-exchange-code", code),

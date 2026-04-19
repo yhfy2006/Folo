@@ -1,7 +1,8 @@
 import fs from "node:fs"
 
-import { app } from "electron"
 import path from "pathe"
+
+import { getUserDataPath } from "./runtime/paths"
 
 export interface UserPreferences {
   language: string
@@ -50,7 +51,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
 }
 
 function getPreferencesPath(): string {
-  return path.join(app.getPath("userData"), "simple-reader-preferences.json")
+  return path.join(getUserDataPath(), "simple-reader-preferences.json")
 }
 
 export function loadPreferences(): UserPreferences {

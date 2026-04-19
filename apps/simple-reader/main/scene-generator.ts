@@ -226,12 +226,16 @@ export async function generateScenes(
   audioDuration: number,
   onStatus?: (status: string) => void,
   deepgramWords?: DeepgramWord[],
+  promptOverride?: string,
 ): Promise<ScenesJson> {
   onStatus?.("Generating scene timeline with Claude...")
 
   const today = new Date().toISOString().slice(0, 10)
 
-  const prompt = `You are a video scene generator for a Chinese AI news show called "YOMOO 每日AI快送".
+  // Use channel-provided prompt when available, otherwise use built-in prompt
+  const prompt =
+    promptOverride ||
+    `You are a video scene generator for a Chinese AI news show called "YOMOO 每日AI快送".
 
 Given aligned audio segments (with timestamps) and the original news report, generate a scenes.json for video rendering.
 

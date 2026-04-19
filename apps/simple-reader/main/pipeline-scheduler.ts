@@ -1,8 +1,7 @@
-import { BrowserWindow } from "electron"
-
 import type { FeedGroup } from "./database"
 import { queryAll } from "./database"
 import { loadPreferences } from "./preferences"
+import { broadcast } from "./runtime/broadcast"
 
 // Track timers: groupId -> timerId (null key = global)
 const timers = new Map<string | null, ReturnType<typeof setTimeout>>()
@@ -107,19 +106,12 @@ async function triggerPipeline(schedule: string, groupId: string | null): Promis
     return
   }
 
-  const win = BrowserWindow.getAllWindows()[0]
-  if (!win) {
-    console.warn("[pipeline-scheduler] No window available, skipping")
-    scheduleNext(schedule, groupId)
-    return
-  }
-
   const label = groupId ? `group:${groupId}` : "global"
   console.info(`[pipeline-scheduler] Triggering pipeline for ${label}...`)
   lastRunDates.set(groupId, today)
 
-  // Notify renderer to start the pipeline with optional groupId
-  win.webContents.send("pipeline-auto-trigger", groupId)
+  // Notify listeners (renderer in Electron, scheduler daemon in CLI).
+  broadcast("pipeline-auto-trigger", groupId)
 
   // Schedule next run
   scheduleNext(schedule, groupId)

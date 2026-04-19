@@ -3,6 +3,7 @@ import fs from "node:fs"
 import { execute, saveDatabase } from "../../database"
 import type { ScenesJson } from "../../scene-generator"
 import { buildVideoDescription, refreshAccessToken, setThumbnail, uploadVideo } from "../../youtube"
+import { substituteTemplate } from "../channel-types"
 import type { PipelineContext } from "../context"
 import type { StageCallbacks, StageDefinition } from "../types"
 
@@ -39,15 +40,25 @@ export const youtubeStage: StageDefinition = {
 
     const description = buildVideoDescription(date, headlines, pageUrl!, audioUrl!)
 
+    // Use channel YouTube config when available
+    const defaultTitle = scenes.youtubeTitle || `YOMOO 每日AI快送 — ${date}`
+    const title = ctx.channel?.youtube?.titleTemplate
+      ? substituteTemplate(ctx.channel.youtube.titleTemplate, ctx.channel, { date })
+      : defaultTitle
+
+    const tags = ctx.channel?.youtube?.tags ?? ["AI", "每日AI快送", "YOMOO", "科技新闻", "AI新闻"]
+    const defaultLanguage = ctx.channel?.language ?? "zh-CN"
+
     // Upload video
     const videoId = await uploadVideo({
       accessToken: youtubeAccessToken,
       videoPath: videoPath!,
-      title: scenes.youtubeTitle || `YOMOO 每日AI快送 — ${date}`,
+      title,
       description,
-      tags: ["AI", "每日AI快送", "YOMOO", "科技新闻", "AI新闻"],
+      tags,
       categoryId: "28",
       privacyStatus: "public",
+      defaultLanguage,
       onProgress: (pct) => callbacks.onStatus(`Uploading to YouTube: ${pct}%`),
     })
 
@@ -67,15 +78,7 @@ export const youtubeStage: StageDefinition = {
       const now = Math.floor(Date.now() / 1000)
       execute(
         "INSERT INTO video_uploads (id, video_id, type, title, date, group_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [
-          uploadId,
-          videoId,
-          "video",
-          scenes.youtubeTitle || `YOMOO 每日AI快送 — ${date}`,
-          date,
-          ctx.groupId || null,
-          now,
-        ],
+        [uploadId, videoId, "video", title, date, ctx.groupId || null, now],
       )
       saveDatabase()
     } catch (err) {

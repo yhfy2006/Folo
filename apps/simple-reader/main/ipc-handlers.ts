@@ -9,6 +9,14 @@ import type { Entry, Feed, FeedGroup } from "./database"
 import { execute, queryAll, queryOne, saveDatabase } from "./database"
 import { generateHtmlPage } from "./html-generator"
 import { parseOPML } from "./opml-parser"
+import {
+  createChannel,
+  deleteChannel,
+  loadAllChannels,
+  loadChannelById,
+  saveChannelConfig,
+} from "./pipeline/channel-loader"
+import { listPromptFiles, readPromptRaw, savePrompt } from "./pipeline/prompt-loader"
 import { getSchedulerStatus, startPipelineScheduler } from "./pipeline-scheduler"
 import type { UserPreferences } from "./preferences"
 import { loadPreferences, savePreferences as savePrefs } from "./preferences"
@@ -683,6 +691,51 @@ export function registerIpcHandlers() {
     execute(`DELETE FROM feed_group_feeds WHERE group_id = ? AND feed_id = ?`, [groupId, feedId])
     saveDatabase()
   })
+
+  // --- Channel Management ---
+
+  ipcMain.handle("get-channels", async () => loadAllChannels())
+
+  ipcMain.handle("get-channel", async (_event, channelId: string) => loadChannelById(channelId))
+
+  ipcMain.handle(
+    "create-channel",
+    async (_event, id: string, name: string, language: string, groupId: string) =>
+      createChannel(id, name, language, groupId),
+  )
+
+  ipcMain.handle("update-channel", async (_event, channelId: string, updates: any) => {
+    const channel = loadChannelById(channelId)
+    if (!channel) throw new Error(`Channel not found: ${channelId}`)
+    const updated = { ...channel, ...updates, id: channelId }
+    saveChannelConfig(updated)
+    return loadChannelById(channelId) // reload to get resolved paths
+  })
+
+  ipcMain.handle("delete-channel", async (_event, channelId: string) => deleteChannel(channelId))
+
+  // --- Prompt Editing ---
+
+  ipcMain.handle("get-prompt-files", async (_event, channelId: string) => {
+    const channel = loadChannelById(channelId)
+    if (!channel) return []
+    return listPromptFiles(channel)
+  })
+
+  ipcMain.handle("read-prompt", async (_event, channelId: string, promptName: string) => {
+    const channel = loadChannelById(channelId)
+    if (!channel) return ""
+    return readPromptRaw(channel, promptName)
+  })
+
+  ipcMain.handle(
+    "save-prompt",
+    async (_event, channelId: string, promptName: string, content: string) => {
+      const channel = loadChannelById(channelId)
+      if (!channel) throw new Error(`Channel not found: ${channelId}`)
+      savePrompt(channel, promptName, content)
+    },
+  )
 }
 
 function generateId(): string {

@@ -5,7 +5,10 @@ import path from "pathe"
 
 import { closeDatabase, initDatabase } from "./database"
 import { registerIpcHandlers } from "./ipc-handlers"
+import { initChannels } from "./pipeline/channel-init"
 import { startPipelineScheduler, stopPipelineScheduler } from "./pipeline-scheduler"
+import { registerBroadcastListener } from "./runtime/broadcast"
+import { setAppPath, setIsPackaged, setUserDataPath } from "./runtime/paths"
 import { startScheduler, stopScheduler } from "./scheduler"
 import { initWorkspace } from "./workspace"
 
@@ -51,11 +54,29 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  // Bridge Electron's runtime paths into the shared shim so database, prefs,
+  // and channel loader return the exact same paths they did before the CLI
+  // was introduced.
+  setUserDataPath(app.getPath("userData"))
+  setAppPath(app.getAppPath())
+  setIsPackaged(app.isPackaged)
+
+  // Forward runtime broadcasts (feeds-updated, pipeline-auto-trigger) to all
+  // renderer windows — same wiring that used to live inline.
+  registerBroadcastListener((event, ...args) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send(event, ...args)
+    }
+  })
+
   // Initialize database (async for sql.js WASM loading)
   await initDatabase()
 
   // Initialize Claude workspace (skills, CLAUDE.md)
   initWorkspace()
+
+  // Initialize channels (copy bundled templates, auto-bind groups, sync V1 prefs)
+  initChannels()
 
   // Register IPC handlers
   registerIpcHandlers()

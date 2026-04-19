@@ -21,6 +21,7 @@ export interface UploadParams {
   tags: string[]
   categoryId: string
   privacyStatus: "public" | "unlisted" | "private"
+  defaultLanguage?: string
   onProgress?: (pct: number) => void
 }
 
@@ -111,6 +112,7 @@ export async function uploadVideo(params: UploadParams): Promise<string> {
     tags,
     categoryId,
     privacyStatus,
+    defaultLanguage,
     onProgress,
   } = params
 
@@ -121,7 +123,7 @@ export async function uploadVideo(params: UploadParams): Promise<string> {
       description,
       tags,
       categoryId,
-      defaultLanguage: "zh-CN",
+      defaultLanguage: defaultLanguage ?? "zh-CN",
     },
     status: {
       privacyStatus,

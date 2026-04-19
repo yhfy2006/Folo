@@ -1,0 +1,36 @@
+{
+  "name": "Signalist",
+  "language": "en",
+  "groupId": "",
+  "pipelineType": "signalist",
+  "tts": {
+    "provider": "minimax",
+    "voiceId": "",
+    "model": ""
+  },
+  "youtube": {
+    "tags": ["shorts", "interview", "highlights", "AI", "tech", "signalist"],
+    "titleTemplate": "{{suggestedTitle}} | Signalist",
+    "descriptionTemplate": "Extracted from: {{sourceTitle}} by {{sourceChannel}}\n\n#shorts #signalist #interview #highlights"
+  },
+  "stages": [
+    "discover",
+    "screen",
+    "transcribe",
+    "extract",
+    "script",
+    "render",
+    "upload",
+    "publish"
+  ],
+  "promptDir": "prompts",
+  "skillsDir": "skills",
+  "signalist": {
+    "topics": ["AI", "technology", "politics", "science", "culture", "economics"],
+    "minVideoDuration": 600,
+    "viralScoreThreshold": 7,
+    "maxShortsPerVideo": 5,
+    "shortsTargetDuration": 58,
+    "bgmDir": "assets/bgm"
+  }
+}
