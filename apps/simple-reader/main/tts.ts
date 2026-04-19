@@ -1,10 +1,10 @@
 import fs from "node:fs"
 
-import { app } from "electron"
 import path from "pathe"
 
 import { splitSubtitlesForLanguage } from "./pipeline/tts-splitter"
 import { loadPreferences } from "./preferences"
+import { getUserDataPath } from "./runtime/paths"
 
 const API_BASE = "https://api.minimax.io/v1"
 const SYNC_CHAR_LIMIT = 10_000
@@ -84,7 +84,7 @@ function preprocessTextForTts(text: string): string {
 }
 
 function getAudioDir(): string {
-  const dir = path.join(app.getPath("userData"), "audio")
+  const dir = path.join(getUserDataPath(), "audio")
   fs.mkdirSync(dir, { recursive: true })
   return dir
 }

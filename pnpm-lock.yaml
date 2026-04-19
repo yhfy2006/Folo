@@ -1190,6 +1190,9 @@ importers:
       '@codemirror/view':
         specifier: 6.41.0
         version: 6.41.0
+      citty:
+        specifier: 0.2.1
+        version: 0.2.1
       fast-xml-parser:
         specifier: ^5.2.3
         version: 5.3.6
@@ -1233,6 +1236,9 @@ importers:
       tailwindcss:
         specifier: 3.4.17
         version: 3.4.17(ts-node@10.9.2(@types/node@25.2.3)(typescript@5.9.3))
+      tsx:
+        specifier: 4.21.0
+        version: 4.21.0
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

@@ -1,8 +1,8 @@
 import fs from "node:fs"
 
-import { app } from "electron"
 import path from "pathe"
 
+import { getUserDataPath } from "./runtime/paths"
 import { getWorkspacePath } from "./workspace"
 
 export interface SkillEntry {
@@ -84,7 +84,7 @@ export function loadAllSkills(): SkillEntry[] {
   const builtinSkills = scanSkillDir(builtinDir, "builtin")
 
   // Layer 2: User global skills (middle priority)
-  const userSkillsDir = path.join(app.getPath("userData"), "skills")
+  const userSkillsDir = path.join(getUserDataPath(), "skills")
   const userSkills = scanSkillDir(userSkillsDir, "user")
 
   // Layer 3: Workspace skills (highest priority, excludes builtin/ subdirectory)

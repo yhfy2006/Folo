@@ -1,8 +1,7 @@
-import { BrowserWindow } from "electron"
-
 import type { Feed } from "./database"
 import { execute, queryAll, saveDatabase } from "./database"
 import { fetchFeed } from "./rss-fetcher"
+import { broadcast } from "./runtime/broadcast"
 
 const FETCH_INTERVAL = 30 * 60 * 1000 // 30 minutes
 let intervalId: ReturnType<typeof setInterval> | null = null
@@ -48,11 +47,7 @@ export async function refreshAllFeeds() {
 
   console.info(`[scheduler] Done: ${successCount} success, ${errorCount} errors`)
 
-  // Notify renderer
-  const windows = BrowserWindow.getAllWindows()
-  for (const win of windows) {
-    win.webContents.send("feeds-updated")
-  }
+  broadcast("feeds-updated")
 }
 
 async function refreshFeed(feed: Feed) {

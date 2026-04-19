@@ -1,25 +1,34 @@
 import fs from "node:fs"
+import { fileURLToPath } from "node:url"
 
-import { app } from "electron"
 import path from "pathe"
 
 import type { FeedGroup } from "../database"
 import { queryAll } from "../database"
 import { loadPreferences } from "../preferences"
+import { getAppPath, isPackaged } from "../runtime/paths"
 import type { loadChannelById } from "./channel-loader"
 import { getChannelsDir, loadAllChannels, saveChannelConfig } from "./channel-loader"
 
 /**
  * Get the path to bundled channel templates shipped with the app.
  * In dev: apps/simple-reader/workspace/channels/
- * In prod: resources/workspace/channels/
+ * In prod (packaged Electron): resources/workspace/channels/
+ * In CLI: {appRoot}/workspace/channels/
  */
 function getBundledChannelsDir(): string {
-  if (app.isPackaged) {
+  if (isPackaged()) {
     return path.join(process.resourcesPath, "workspace", "channels")
   }
-  // Dev mode: relative to this file's location in main/pipeline/
-  return path.join(__dirname, "../../workspace/channels")
+  // Prefer the app root when known (CLI sets this explicitly); otherwise fall
+  // back to walking up from this file's location (works in electron-vite dev
+  // where __dirname is dist/main/).
+  const appRoot = getAppPath()
+  const fromAppRoot = path.join(appRoot, "workspace", "channels")
+  if (fs.existsSync(fromAppRoot)) return fromAppRoot
+
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  return path.join(here, "../../workspace/channels")
 }
 
 /**

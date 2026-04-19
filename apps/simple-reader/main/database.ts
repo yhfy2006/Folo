@@ -1,9 +1,10 @@
 import fs from "node:fs"
 
-import { app } from "electron"
 import path from "pathe"
 import type { Database as SqlJsDatabase } from "sql.js"
 import initSqlJs from "sql.js"
+
+import { getUserDataPath } from "./runtime/paths"
 
 // Types
 export interface Feed {
@@ -82,7 +83,7 @@ let dbPath = ""
 
 export async function initDatabase() {
   const SQL = await initSqlJs()
-  dbPath = path.join(app.getPath("userData"), "simple-reader.db")
+  dbPath = path.join(getUserDataPath(), "simple-reader.db")
 
   // Load existing database if it exists
   if (fs.existsSync(dbPath)) {

@@ -13,5 +13,5 @@
     "allowSyntheticDefaultImports": true,
     "noEmit": true
   },
-  "include": ["main/**/*.ts", "electron.vite.config.ts"]
+  "include": ["main/**/*.ts", "cli/**/*.ts", "electron.vite.config.ts"]
 }

@@ -2,14 +2,15 @@ import { spawn } from "node:child_process"
 import fs from "node:fs"
 import { pipeline } from "node:stream/promises"
 
-import { app } from "electron"
 import path from "pathe"
 
+import { getAppPath } from "./runtime/paths"
 import type { ScenesJson } from "./scene-generator"
 
-// Use app.getAppPath() to get the source root (not the compiled dist/ dir)
+// Use getAppPath() (Electron's app.getAppPath or CLI root) to get the source
+// root, not the compiled dist/ dir.
 function getVideoProjectDir(): string {
-  return path.resolve(app.getAppPath(), "video")
+  return path.resolve(getAppPath(), "video")
 }
 
 function getVideoEntryPoint(): string {

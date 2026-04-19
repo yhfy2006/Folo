@@ -1,8 +1,8 @@
 import fs from "node:fs"
 
-import { app } from "electron"
 import path from "pathe"
 
+import { getUserDataPath } from "../runtime/paths"
 import type { Channel } from "./channel-types"
 import type { StageName } from "./types"
 
@@ -38,7 +38,7 @@ const PROMPT_FILES: Record<string, string> = {
  * Returns the absolute path to `workspace/channels/` under Electron userData.
  */
 export function getChannelsDir(): string {
-  return path.join(app.getPath("userData"), "workspace", "channels")
+  return path.join(getUserDataPath(), "workspace", "channels")
 }
 
 /**

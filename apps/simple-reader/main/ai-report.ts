@@ -2,7 +2,6 @@ import { spawn } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 
-import { app } from "electron"
 import path from "pathe"
 
 import type { Entry, FeedGroup } from "./database"
@@ -10,6 +9,7 @@ import { execute, queryAll, queryOne, saveDatabase } from "./database"
 import type { UserPreferences } from "./preferences"
 import { loadPreferences } from "./preferences"
 import { fetchArticleContent } from "./readability"
+import { getAppPath } from "./runtime/paths"
 import { formatSkillsPrompt, loadAllSkills } from "./skills"
 import { getWorkspacePath } from "./workspace"
 import type { ChannelVideo } from "./youtube"
@@ -834,7 +834,7 @@ export async function generatePodcastScript(
   // Read the methodology file for additional context
   let methodology = ""
   try {
-    const appPath = app.getAppPath()
+    const appPath = getAppPath()
     const methodologyPath = path.join(appPath, "resources", "小Lin说视频文案方法论.md")
     methodology = fs.readFileSync(methodologyPath, "utf-8")
     // Strip frontmatter
