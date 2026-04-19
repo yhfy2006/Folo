@@ -1,8 +1,10 @@
 import * as React from "react"
 import { Audio, staticFile, useVideoConfig } from "remotion"
 
+import { CoverCard } from "./components/CoverCard"
 import { TextCard } from "./components/TextCard"
 import { VideoClip } from "./components/VideoClip"
+import { EDITORIAL_PALETTE } from "./fonts"
 import type { SignalistShortsData } from "./types"
 
 export const SignalistShorts: React.FC<SignalistShortsData> = ({ segments, bgmPath }) => {
@@ -21,7 +23,7 @@ export const SignalistShorts: React.FC<SignalistShortsData> = ({ segments, bgmPa
       style={{
         width: 1080,
         height: 1920,
-        backgroundColor: "#000",
+        backgroundColor: EDITORIAL_PALETTE.bg,
         position: "relative",
         overflow: "hidden",
       }}
@@ -49,12 +51,28 @@ export const SignalistShorts: React.FC<SignalistShortsData> = ({ segments, bgmPa
 
       {segmentLayout.map((seg, i) => {
         if (seg.type === "text" && seg.text) {
+          const isFinal = i === segmentLayout.length - 1
+          if (seg.variant === "cover") {
+            return (
+              <CoverCard
+                key={i}
+                headline={seg.text}
+                kicker={seg.kicker}
+                attribution={seg.attribution}
+                attributionRole={seg.attributionRole}
+                pullQuote={seg.pullQuote}
+                startFrame={seg.startFrame}
+                durationFrames={seg.durationFrames}
+              />
+            )
+          }
           return (
             <TextCard
               key={i}
               text={seg.text}
               startFrame={seg.startFrame}
               durationFrames={seg.durationFrames}
+              fadeOutFrames={isFinal ? 60 : undefined}
             />
           )
         }

@@ -14,6 +14,13 @@ The input JSON shape:
 {
   "fps": 30,
   "bgmPath": "signalist-bgm.mp3",
+  "cover": {                               # OPTIONAL — editorial first-frame poster
+    "headline": "Full editorial headline, complete sentence.",
+    "kicker": "COMMENTARY · AI SAFETY · N°012",
+    "attribution": "GEOFFREY HINTON",
+    "attributionRole": "Turing laureate · Ex-Google · 2024",
+    "pullQuote": "A short italic punchline."
+  },
   "segments": [
     {"type": "text", "text": "...", "seconds": 5.0},
     {"type": "clip", "videoPath": "signalist-segment-1.mp4",
@@ -22,6 +29,10 @@ The input JSON shape:
     ...
   ]
 }
+
+When `cover` is present, build_props prepends a 1-frame cover segment to
+the output so that YouTube Shorts feed picks up the editorial poster as
+the thumbnail, but actual playback passes through it instantly.
 
 The output JSON shape:
 {
@@ -50,8 +61,26 @@ def build_props(script):
     fps = script.get("fps", 30)
     bgm_path = script.get("bgmPath")
     segments_in = script["segments"]
+    cover = script.get("cover")
 
     segments_out = []
+
+    # Prepend a 1-frame editorial cover poster if script supplies one.
+    # Cover renders fully opaque at frame 0 so the Shorts feed picks it up as the
+    # thumbnail; actual playback passes through it in 33ms and continues with the
+    # regular opening text card.
+    if cover and cover.get("headline"):
+        cover_seg = {
+            "type": "text",
+            "variant": "cover",
+            "text": cover["headline"],
+            "durationFrames": 1,
+        }
+        for k in ("kicker", "attribution", "attributionRole", "pullQuote"):
+            if cover.get(k):
+                cover_seg[k] = cover[k]
+        segments_out.append(cover_seg)
+
     for s in segments_in:
         seconds = float(s["seconds"])
         duration_frames = int(round(seconds * fps))

@@ -35,11 +35,78 @@ Load `<channel>/prompts/script.md` as the base — it already enforces:
 - Commentary must add fact, context, or reframing (not atmosphere)
 - Max 20 words per opening/closing card, 15 per transition
 - Headlines are setup/payoff pairs (top = "AI CEO's Secret Confession", bottom = "Chernobyl is the BEST case")
+- Opening card states the thesis upfront (thesis/number/name-drop, not teasers or atmosphere)
+- Transition cards are definitive ("X said: no one needs permission"), not explanatory ("X announced Y in 2024")
+- Closing card is a CTA ("Comment X if Y"), not a conclusion
+
+## Retention-curve defense (scales with duration)
+
+Every Shorts length has a mid-watch fatigue cliff. The mid-hook window is roughly 45% of total runtime. Pick the window by target duration and bake it into the prompt:
+
+| Target duration   | Mid-hook window | Required?                                      |
+| ----------------- | --------------- | ---------------------------------------------- |
+| ≤60s              | —               | No — uninterrupted pacing beats a forced pause |
+| 60-90s            | 35s-55s         | Yes                                            |
+| 90-120s           | 45s-65s         | Yes                                            |
+| >120s (long mode) | 55s-75s         | Yes — defends the 1:00 cliff                   |
+
+Add a block like this to the prompt, substituting the window for the current target:
+
+```
+This video targets ~85s. Shorts completion rate dips around the 45s mark.
+You MUST place one transition card on the verified cut nearest 45s, landing
+between 35s and 55s of total runtime. This "mid-hook" restarts tension — pick
+a reframe, a fresh number, or a stakes statement that opens a new thread.
+Without it, you lose roughly 20 points of retention at the half-point.
+```
+
+If the script comes back without a card landing in the correct window, reprompt with the specific gap called out — don't silently deliver a video missing its mid-hook.
+
+## Target duration mode (default ≤90s)
+
+Default: ≤90s (target 80-88s) for completion-rate optimization. In this mode:
+
+- Pick the 2 strongest clips only (drop the third even if it scores well)
+- Commentary cards run 3.5-5s (shorter than long mode)
+- 1 mid-hook card in the [35s, 55s] window
+- Source footage ratio can run 75-85% — short videos are naturally source-heavy
+
+Only switch to long mode (150-178s) when (a) the user explicitly asks, or (b) all 3 clips score 8+ AND dropping any one hurts the arc. Default bias is always ≤90s because completion rate compounds into reach.
+
+## Editorial cover (first-frame poster)
+
+Before the opening card, the script must produce an editorial magazine-style cover object. This becomes a 1-frame segment at the start of the video — YouTube Shorts feed picks it up as the thumbnail, playback passes through it instantly.
+
+Fields the AI must emit:
+
+```json
+"cover": {
+  "headline": "Full 12-18 word literary sentence (FT Weekend / Wired style, NOT a teaser)",
+  "kicker": "COMMENTARY · AI SAFETY · N°012",
+  "attribution": "GEOFFREY HINTON",
+  "attributionRole": "Turing laureate · Ex-Google · 2024",
+  "pullQuote": "A short 5-8 word italic payoff."
+}
+```
+
+`build_props.py` auto-detects `cover` on the top level of the script JSON and prepends a 1-frame cover segment (type=text, variant=cover) before the opening card.
+
+The cover and the opening text card are complementary, not duplicate:
+
+- Cover = editorial "feature page" of the magazine — literary, complete sentence, with attribution and pull quote
+- Opening card = direct thesis stated plainly, readable mid-scroll
 
 ## Structure the script should produce
 
 ```json
 {
+  "cover": {
+    "headline": "The godfather of AI just admitted his machines are already faking dumb.",
+    "kicker": "COMMENTARY · AI SAFETY · N°012",
+    "attribution": "GEOFFREY HINTON",
+    "attributionRole": "Turing laureate · Ex-Google · 2024",
+    "pullQuote": "And it could talk itself free."
+  },
   "openingCard": {"text": "...", "seconds": 5.0},
   "closingCard": {"text": "...", "seconds": 5.0},
   "clips": [

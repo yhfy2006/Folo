@@ -1242,6 +1242,9 @@ importers:
       '@remotion/cli':
         specifier: ^4.0.443
         version: 4.0.444(@swc/helpers@0.5.18)(bufferutil@4.1.0)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+      '@remotion/google-fonts':
+        specifier: 4.0.448
+        version: 4.0.448(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@remotion/media-utils':
         specifier: ^4.0.443
         version: 4.0.444(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
@@ -6479,6 +6482,9 @@ packages:
     resolution: {integrity: sha512-WFbF8lbROEf5VD7oyMOZFCSaVz35Ypn6Z4x5556FO6mMWE/ev1oeNEkhS4FN2F69zVyGO9y/BE76I6v+ppXg0A==}
     cpu: [x64]
     os: [win32]
+
+  '@remotion/google-fonts@4.0.448':
+    resolution: {integrity: sha512-mpey2nMUu8PLcAt8wnNFfA22vOLNUH60SjC/YOs7e8CUoisNyjEV9itKOwVdtoUdfKDOdeAWbAQuDrSsua7gTg==}
 
   '@remotion/licensing@4.0.444':
     resolution: {integrity: sha512-J3KKUa9K19I23SDQYcmVjGD9aIVhxSiRUgxUTk0Yt76WBQvyCYLun8G+uGXYNnYTuMn+42wwFmW6m74fEJ9PJQ==}
@@ -14755,6 +14761,12 @@ packages:
       react: 19.1.0
       react-dom: 19.1.0
 
+  remotion@4.0.448:
+    resolution: {integrity: sha512-4NBSmQRIzntZiLEtOU/bGMQXfnGgUsBoyrewdTRyYzPl+qnvlBjqwxcntsu6SDY/W7ucEwKZUTc7GDOcFhIuAA==}
+    peerDependencies:
+      react: 19.1.0
+      react-dom: 19.1.0
+
   remove-trailing-slash@0.1.1:
     resolution: {integrity: sha512-o4S4Qh6L2jpnCy83ysZDau+VORNvnFw07CKSAymkd6ICNVEPisMyzlc00KlvvicsxKck94SEwhDnMNdICzO+tA==}
 
@@ -22877,6 +22889,13 @@ snapshots:
 
   '@remotion/compositor-win32-x64-msvc@4.0.444':
     optional: true
+
+  '@remotion/google-fonts@4.0.448(react-dom@19.1.0(react@19.1.0))(react@19.1.0)':
+    dependencies:
+      remotion: 4.0.448(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
+    transitivePeerDependencies:
+      - react
+      - react-dom
 
   '@remotion/licensing@4.0.444': {}
 
@@ -32571,6 +32590,11 @@ snapshots:
       unified: 11.0.5
 
   remotion@4.0.444(react-dom@19.1.0(react@19.1.0))(react@19.1.0):
+    dependencies:
+      react: 19.1.0
+      react-dom: 19.1.0(react@19.1.0)
+
+  remotion@4.0.448(react-dom@19.1.0(react@19.1.0))(react@19.1.0):
     dependencies:
       react: 19.1.0
       react-dom: 19.1.0(react@19.1.0)

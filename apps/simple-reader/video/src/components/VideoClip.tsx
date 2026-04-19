@@ -1,28 +1,42 @@
 import * as React from "react"
 import { interpolate, OffthreadVideo, Sequence, staticFile, useCurrentFrame } from "remotion"
 
+import { EDITORIAL_PALETTE, SANS, SERIF } from "../fonts"
+
 interface VideoClipProps {
   videoPath: string
   subtitleText?: string
-  topText?: string // bold headline above video
-  bottomText?: string // bold headline below video
+  topText?: string // kicker label above video
+  bottomText?: string // pull-quote headline below video
   startFrame: number
   durationFrames: number
   videoStartFrom?: number // frame offset into the source video (default: 0)
 }
 
-/** Bold outlined text style for top/bottom headlines */
-const headlineStyle: React.CSSProperties = {
-  fontSize: 64,
-  fontFamily: "'Inter', 'Helvetica Neue', sans-serif",
-  fontWeight: 900,
-  color: "#FFD700",
+/** Top kicker — small caps sans-serif label above video (editorial chapter-heading) */
+const topKickerStyle: React.CSSProperties = {
+  fontSize: 34,
+  fontFamily: SANS,
+  fontWeight: 700,
+  color: EDITORIAL_PALETTE.goldWarm,
   textAlign: "center",
   lineHeight: 1.2,
-  letterSpacing: 2,
-  WebkitTextStroke: "3px #000",
-  paintOrder: "stroke fill",
-  textShadow: "0 4px 12px rgba(0,0,0,0.8), 0 2px 4px rgba(0,0,0,0.9)",
+  letterSpacing: 6,
+  textTransform: "uppercase",
+  textShadow: "0 2px 8px rgba(0,0,0,0.95)",
+}
+
+/** Bottom headline — heavy serif pull-quote below video */
+const bottomHeadlineStyle: React.CSSProperties = {
+  fontSize: 58,
+  fontFamily: SERIF,
+  fontWeight: 700,
+  fontStyle: "italic",
+  color: EDITORIAL_PALETTE.cream,
+  textAlign: "center",
+  lineHeight: 1.18,
+  letterSpacing: 0.5,
+  textShadow: "0 2px 12px rgba(0,0,0,0.95), 0 1px 3px rgba(0,0,0,1)",
 }
 
 export const VideoClip: React.FC<VideoClipProps> = ({
@@ -52,7 +66,15 @@ export const VideoClip: React.FC<VideoClipProps> = ({
   const videoTop = Math.round((1920 - videoHeight) / 2) // centered vertically
 
   return (
-    <div style={{ position: "absolute", inset: 0, backgroundColor: "#000", opacity, zIndex: 50 }}>
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        backgroundColor: EDITORIAL_PALETTE.bg,
+        opacity,
+        zIndex: 50,
+      }}
+    >
       {/* 16:9 video centered — Sequence resets timeline so video starts from videoStartFrom */}
       <div
         style={{
@@ -85,7 +107,7 @@ export const VideoClip: React.FC<VideoClipProps> = ({
           left: 0,
           right: 0,
           height: 120,
-          background: "linear-gradient(to bottom, #000 0%, transparent 100%)",
+          background: `linear-gradient(to bottom, ${EDITORIAL_PALETTE.bg} 0%, transparent 100%)`,
           zIndex: 55,
         }}
       />
@@ -98,40 +120,52 @@ export const VideoClip: React.FC<VideoClipProps> = ({
           left: 0,
           right: 0,
           height: 120,
-          background: "linear-gradient(to bottom, transparent 0%, #000 100%)",
+          background: `linear-gradient(to bottom, transparent 0%, ${EDITORIAL_PALETTE.bg} 100%)`,
           zIndex: 55,
         }}
       />
 
-      {/* Top headline — bold outlined text just above video */}
+      {/* Top kicker — small caps sans-serif label above video */}
       {topText && (
         <div
           style={{
             position: "absolute",
-            bottom: 1920 - videoTop + 20,
-            left: 40,
-            right: 40,
+            bottom: 1920 - videoTop + 30,
+            left: 60,
+            right: 60,
             zIndex: 60,
             textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 18,
           }}
         >
-          <span style={headlineStyle}>{topText}</span>
+          <span style={topKickerStyle}>{topText}</span>
+          <span
+            style={{
+              width: 40,
+              height: 2,
+              backgroundColor: EDITORIAL_PALETTE.goldWarm,
+              opacity: 0.6,
+            }}
+          />
         </div>
       )}
 
-      {/* Bottom headline — bold outlined text just below video */}
+      {/* Bottom headline — italic serif pull-quote below video */}
       {bottomText && (
         <div
           style={{
             position: "absolute",
-            top: videoTop + videoHeight + 20,
-            left: 40,
-            right: 40,
+            top: videoTop + videoHeight + 36,
+            left: 60,
+            right: 60,
             zIndex: 60,
             textAlign: "center",
           }}
         >
-          <span style={headlineStyle}>{bottomText}</span>
+          <span style={bottomHeadlineStyle}>&ldquo;{bottomText}&rdquo;</span>
         </div>
       )}
 
@@ -150,9 +184,9 @@ export const VideoClip: React.FC<VideoClipProps> = ({
           <span
             style={{
               fontSize: 36,
-              fontFamily: "'Inter', 'Helvetica Neue', sans-serif",
-              fontWeight: 600,
-              color: "rgba(255, 255, 255, 0.9)",
+              fontFamily: SANS,
+              fontWeight: 500,
+              color: EDITORIAL_PALETTE.cream,
               lineHeight: 1.5,
             }}
           >

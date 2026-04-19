@@ -7,9 +7,17 @@ description: Produce a Signalist commentary Shorts video from a YouTube intervie
 
 Produce one complete Signalist commentary Shorts video from a YouTube interview URL.
 
-Signalist is a commentary channel, not a clip channel. Every text card must add original analysis — fact-check, context, reframe, or counterpoint — that transforms the source material. Source footage should never exceed 70% of the video; commentary cards fill the rest.
+Signalist is a commentary channel, not a clip channel. Every text card must add original analysis — fact-check, context, reframe, or counterpoint — that transforms the source material.
 
-The final output is a 9:16 vertical Shorts video (max 3 minutes) rendered by Remotion, with the interview footage letterboxed horizontally in the center, gold-outlined headlines above and below, and epic BGM synced to phrase beats.
+The final output is a 9:16 vertical Shorts video rendered by Remotion, with the interview footage letterboxed horizontally in the center, gold-outlined headlines above and below, and epic BGM synced to phrase beats.
+
+## Duration modes — completion rate over comprehensiveness
+
+**Default: ≤90s (target 80-88s).** Shorts completion rate falls off a cliff past 90s; 60-90s is the sweet spot where the algorithm still treats the video as a Short-native asset and retention averages 50-70% for good content. Ship one or two of the strongest clips with tight commentary. Source footage ratio 70-85% is expected at this length — the commentary rule relaxes because there isn't room for Wikipedia padding anyway.
+
+**Long mode: 150-178s.** Only use when the material actually has 3 clips that each score 8+ AND the commentary arc (hook → second-hook → payoff) justifies the length. At 3 min, completion rate typically drops to 30-45%; don't take the hit unless the extra content earns it. In long mode, the second-hook card at ~60s is mandatory.
+
+Default to ≤90s unless the user explicitly asks for long-form or the interview is too dense to compress. When picking between 90s and 180s, prefer 90s — completion rate compounds into reach far more than extra minutes of content do.
 
 ## Inputs
 
@@ -59,6 +67,21 @@ Understanding these prevents the most common production failures:
 **Headlines frame the story.** Gold-outlined top/bottom text stays visible during clip playback and tells the viewer WHY this segment matters before they process what's being said. Top text is the setup ("AI CEO's Secret Confession"); bottom text is the payoff hook ("Chernobyl is the BEST case"). These are different from the commentary cards between clips.
 
 **Rough beat alignment is enough.** BGM downbeats repeat every ~8 seconds. Commentary cards should land near beats for rhythmic feel, but speech-boundary constraints ALWAYS override beat constraints. Don't force a mid-sentence cut just to hit a beat.
+
+**Retention curve drives structure.** Every Shorts length has predictable drop-off cliffs. The script must defend them:
+
+- **Opening card (0:00-0:03, all lengths)** is a reverse-intuition statement, a hard number, or a name-drop. Never a teaser ("you won't believe..."). Never atmospheric ("everything is about to change"). A good hook states the payoff upfront, e.g. "Chernobyl is the BEST case" or "AI safety is a mathematical impossibility." If a viewer could screenshot the first card and it still delivers a thesis, it's working.
+- **Mid-hook window scales with total duration.** The window is ~45% of total runtime:
+  - **≤60s videos**: no mid-hook needed — there's no fatigue cliff to defend; keep the pacing uninterrupted.
+  - **60-90s videos**: a commentary card MUST land between 35s and 55s (this is the micro-cliff at the half-point).
+  - **90-120s videos**: card must land between 45s and 65s.
+  - **>120s (long mode)**: card must land between 55s and 75s to defend the 1:00 cliff.
+    The mid-hook card restarts tension — a fresh number, a stakes reframe ("Translation: every junior dev's job is next"), or a name-drop.
+- **Closing card = CTA, not conclusion.** Must prompt a comment or replay. "Comment P(Doom) if you think we're cooked" beats "The future is uncertain." A good close makes the viewer act, not nod.
+
+**Editorial first-frame cover is the thumbnail.** The first frame of the rendered video is what YouTube Shorts feed, channel grid, and search results display as the thumbnail. The script stage must emit a `cover` object (headline + kicker + attribution + attributionRole + pullQuote) which `build_props.py` prepends as a 1-frame segment with `variant: "cover"`. Playback passes through it in 33ms; the opening text card still carries the plain-language thesis in-video. Cover copy is literary (FT Weekend / Wired sentence style); opening card copy is direct and declarative. They complement, not duplicate.
+
+**Definitive commentary, not Wikipedia.** Commentary cards state a position, not a summary. "500 billion dollars said: no one needs permission" beats "Altman raised $500B for AI infrastructure in 2024." The first reframes with attitude; the second narrates. Every card should pass the "could this be a tweet?" test — if it reads like an encyclopedia entry, rewrite with a verb and an edge.
 
 ## Stage Details
 
@@ -193,12 +216,30 @@ See `references/render-props-schema.md` for detailed props construction rules in
 
 After rendering, verify:
 
-- **Duration**: `ffprobe -show_format output-shorts.mp4` → duration ≤ 180s. Hard fail if over.
+- **Duration**: `ffprobe -show_format output-shorts.mp4` → duration ≤ 90s by default (hard fail if over in default mode); ≤ 180s in explicit long mode.
 - **Dimensions**: 1080x1920, 30fps. If off, Remotion config is wrong.
 - **Spot-check playback**: Open the file and listen to the first 2 cuts. If either has residual speech from the previous sentence, the find-cut-points stage was too loose — rerun with `--min-silence 0.5` or have Claude pick different cut points.
-- **Total source footage**: sum all clip `durationFrames` in the props. Should be ≤ 70% of total duration. If over, the commentary isn't pulling its weight — add longer commentary cards or shorter clips.
+- **Total source footage**: ≤ 70% of total duration for long mode (>120s); ≤ 85% for ≤90s mode (short videos are naturally source-heavy because there's no room for padding commentary). If over the threshold for your length class, the commentary isn't pulling its weight — cut a clip sub-part, not a commentary card.
+- **Hook audit**: Screenshot frame at 00:01. If the visible text is a teaser ("you won't believe...", "this will shock you") or atmospheric ("the future is here"), the hook fails. The first card must be a thesis, a number, or a named claim — something the viewer can quote without watching further.
+- **Mid-hook placement** (scales by total duration):
+  - ≤60s: no mid-hook required.
+  - 60-90s: commentary card must land between 35s and 55s.
+  - 90-120s: commentary card must land between 45s and 65s.
+  - \>120s: commentary card must land between 55s and 75s.
+    If the script skipped the relevant window, insert one using the verified cut nearest the midpoint.
+- **Closing is CTA, not conclusion**: The last card must invite a comment or a replay. If it reads like a summary ("The future is uncertain"), rewrite it as a question or a provocative claim that asks the viewer to take a side.
 
 If any gate fails, say what failed and what stage to fix — don't silently deliver a broken video.
+
+### Post-publish checks (24h)
+
+After the video is live, pull YouTube Studio's retention curve and check three cliffs:
+
+- **0:00-0:30 < 60% retention** → hook failed. The opening card was a teaser instead of a thesis. Next video: state the payoff upfront.
+- **1:00-1:30 shows a drop-off cliff** → middle section lacked a second hook. Next video: plant a fresh number or stakes reframe on the cut nearest 60s.
+- **Last 5s retention spikes up** → replay hook worked. Keep doing that.
+
+These readings feed directly back into the next run's script stage — they're not post-mortem, they're the next script's brief.
 
 ## Common Failure Modes
 
@@ -211,6 +252,8 @@ If any gate fails, say what failed and what stage to fix — don't silently deli
 **Render fails with staticFile error**: The segment or BGM file wasn't copied into `apps/simple-reader/video/public/`. Remotion only reads from public/.
 
 **Over 180s**: YouTube Shorts cap. Trim the longest clip at its next verified cut point — don't just truncate at an arbitrary time, that reintroduces mid-sentence problems.
+
+**Over 90s in default mode**: Default target is 80-88s for completion rate. If the extract stage returned 3 clips totalling >80s of speech, the script stage must pick the 2 strongest and drop the third — don't force all three in. Kindergarten + Volkswagen + Singularity in one video defeats the whole point of ≤90s mode. One crisp narrative beats three half-told ones.
 
 ## Quick Workflow Reference
 
